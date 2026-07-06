@@ -1,0 +1,292 @@
+name: Release Packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+env:
+  CONFIGURATION: Release
+  TEMPLATE_REF: master
+
+jobs:
+  windows-x64:
+    name: Windows x64 installer and manual ZIP
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build manual Windows ZIP
+        shell: pwsh
+        run: ./scripts/build-local-windows.ps1 -Configuration $env:CONFIGURATION -VisualStudio 2022 -Ci
+
+      - name: Read version
+        id: version
+        shell: pwsh
+        run: |
+          $spec = Get-Content buildspec.json -Raw | ConvertFrom-Json
+          "version=$($spec.version)" >> $env:GITHUB_OUTPUT
+
+      - name: Prepare installer source folder
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem -Path release -Filter '*windows-x64.zip' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $zip) { throw 'Windows manual ZIP was not found in release/.' }
+          $manual = Join-Path $PWD 'dist/windows-manual'
+          if (Test-Path $manual) { Remove-Item $manual -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $manual | Out-Null
+          Expand-Archive -Path $zip.FullName -DestinationPath $manual -Force
+          $required = @(
+            'obs-plugins/64bit/arvisual.dll',
+            'data/obs-plugins/arvisual/effects/arvisual.effect',
+            'data/obs-plugins/arvisual/locale/en-US.ini'
+          )
+          foreach ($item in $required) {
+            $path = Join-Path $manual $item
+            if (-not (Test-Path $path)) { throw "Installer source is missing: $path" }
+          }
+          "manual=$manual" >> $env:GITHUB_ENV
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build Windows installer EXE
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe was not found at $iscc" }
+          & $iscc "/DAppVersion=${{ steps.version.outputs.version }}" "/DSourceDir=$env:manual" "/DOutputDir=$PWD\release" "packaging\windows\arvisual.iss"
+
+      - name: Upload Windows package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: arvisual-windows-x64
+          path: |
+            release/*windows-x64.zip
+            release/*windows-x64.exe
+
+  macos-universal:
+    name: macOS universal PKG and manual ZIP
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          version="$(python3 -c 'import json; print(json.load(open("buildspec.json"))["version"])')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Overlay ArVisual into official OBS plugin template
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .build
+          git clone --depth 1 --branch "$TEMPLATE_REF" https://github.com/obsproject/obs-plugintemplate.git .build/obs-plugintemplate
+          for item in src data CMakeLists.txt CMakePresets.json buildspec.json; do
+            rm -rf ".build/obs-plugintemplate/$item"
+            cp -R "$item" ".build/obs-plugintemplate/$item"
+          done
+
+      - name: Configure
+        shell: bash
+        working-directory: .build/obs-plugintemplate
+        run: cmake --preset macos
+
+      - name: Build
+        shell: bash
+        working-directory: .build/obs-plugintemplate
+        run: cmake --build --preset macos --config "$CONFIGURATION" --parallel
+
+      - name: Install to stage
+        shell: bash
+        working-directory: .build/obs-plugintemplate
+        run: |
+          cmake --install build_macos --prefix "$GITHUB_WORKSPACE/dist/macos-stage" --config "$CONFIGURATION"
+
+      - name: Package macOS PKG and manual ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.version.outputs.version }}'
+          RELEASE_DIR="$GITHUB_WORKSPACE/release"
+          mkdir -p "$RELEASE_DIR" "$GITHUB_WORKSPACE/dist/macos-manual" "$GITHUB_WORKSPACE/dist/macos-pkg-root/Library/Application Support/obs-studio/plugins"
+
+          PLUGIN="$(find "$GITHUB_WORKSPACE/dist/macos-stage" -name 'arvisual.plugin' -type d | head -n 1)"
+          if [[ -z "$PLUGIN" ]]; then
+            PLUGIN="$(find "$GITHUB_WORKSPACE/.build/obs-plugintemplate/build_macos" -name 'arvisual.plugin' -type d | head -n 1)"
+          fi
+          if [[ -z "$PLUGIN" ]]; then
+            echo 'arvisual.plugin was not found.' >&2
+            exit 1
+          fi
+
+          cp -R "$PLUGIN" "$GITHUB_WORKSPACE/dist/macos-manual/arvisual.plugin"
+          cat > "$GITHUB_WORKSPACE/dist/macos-manual/README-INSTALL-MACOS.txt" <<'TXT'
+          ArVisual Smart Color Enhancer for OBS - macOS manual install
+
+          1. Close OBS Studio.
+          2. Copy arvisual.plugin to:
+             ~/Library/Application Support/obs-studio/plugins/
+          3. Open OBS Studio.
+          4. Add filter: ArVisual - Smart Color Enhancer.
+          TXT
+          (cd "$GITHUB_WORKSPACE/dist/macos-manual" && zip -qry "$RELEASE_DIR/arvisual-obs-v${VERSION}-macos-universal-manual.zip" .)
+
+          cp -R "$PLUGIN" "$GITHUB_WORKSPACE/dist/macos-pkg-root/Library/Application Support/obs-studio/plugins/arvisual.plugin"
+          pkgbuild \
+            --root "$GITHUB_WORKSPACE/dist/macos-pkg-root" \
+            --install-location / \
+            --identifier com.masari.arvisual-obs \
+            --version "$VERSION" \
+            "$RELEASE_DIR/ArVisual-OBS-Installer-v${VERSION}-macos-universal.pkg"
+
+      - name: Upload macOS package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: arvisual-macos-universal
+          path: |
+            release/*macos-universal*.zip
+            release/*macos-universal*.pkg
+
+  linux-x86_64:
+    name: Linux x86_64 DEB and manual TAR.GZ
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build pkg-config zip tar dpkg-dev libobs-dev obs-studio
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          version="$(python3 -c 'import json; print(json.load(open("buildspec.json"))["version"])')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Overlay ArVisual into official OBS plugin template
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .build
+          git clone --depth 1 --branch "$TEMPLATE_REF" https://github.com/obsproject/obs-plugintemplate.git .build/obs-plugintemplate
+          for item in src data CMakeLists.txt CMakePresets.json buildspec.json; do
+            rm -rf ".build/obs-plugintemplate/$item"
+            cp -R "$item" ".build/obs-plugintemplate/$item"
+          done
+
+      - name: Configure
+        shell: bash
+        working-directory: .build/obs-plugintemplate
+        run: cmake --preset ubuntu-x86_64
+
+      - name: Build
+        shell: bash
+        working-directory: .build/obs-plugintemplate
+        run: cmake --build --preset ubuntu-x86_64 --parallel
+
+      - name: Install to stage
+        shell: bash
+        working-directory: .build/obs-plugintemplate
+        run: |
+          cmake --install build_x86_64 --prefix "$GITHUB_WORKSPACE/dist/linux-stage"
+
+      - name: Package Linux DEB and manual TAR.GZ
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.version.outputs.version }}'
+          RELEASE_DIR="$GITHUB_WORKSPACE/release"
+          mkdir -p "$RELEASE_DIR" "$GITHUB_WORKSPACE/dist/linux-manual" "$GITHUB_WORKSPACE/dist/linux-deb/DEBIAN"
+
+          cp -a "$GITHUB_WORKSPACE/dist/linux-stage/." "$GITHUB_WORKSPACE/dist/linux-manual/"
+          cat > "$GITHUB_WORKSPACE/dist/linux-manual/README-INSTALL-LINUX.txt" <<'TXT'
+          ArVisual Smart Color Enhancer for OBS - Linux manual install
+
+          Copy the staged folders into /usr/local, or copy the plugin library and data files into the matching OBS plugin paths used by your distro.
+
+          Typical OBS paths:
+          - /usr/lib/x86_64-linux-gnu/obs-plugins/
+          - /usr/share/obs/obs-plugins/arvisual/
+          TXT
+          tar -C "$GITHUB_WORKSPACE/dist/linux-manual" -czf "$RELEASE_DIR/arvisual-obs-v${VERSION}-linux-x86_64-manual.tar.gz" .
+
+          mkdir -p "$GITHUB_WORKSPACE/dist/linux-deb/usr"
+          cp -a "$GITHUB_WORKSPACE/dist/linux-stage/." "$GITHUB_WORKSPACE/dist/linux-deb/usr/"
+          INSTALLED_SIZE=$(du -sk "$GITHUB_WORKSPACE/dist/linux-deb/usr" | cut -f1)
+          cat > "$GITHUB_WORKSPACE/dist/linux-deb/DEBIAN/control" <<EOF
+          Package: arvisual-obs
+          Version: ${VERSION}
+          Section: video
+          Priority: optional
+          Architecture: amd64
+          Depends: obs-studio
+          Maintainer: Mas Ari <ari.sulistiono@gmail.com>
+          Installed-Size: ${INSTALLED_SIZE}
+          Description: ArVisual Smart Color Enhancer for OBS Studio
+           One-click smart color pop video filter for OBS Studio.
+          EOF
+          dpkg-deb --build "$GITHUB_WORKSPACE/dist/linux-deb" "$RELEASE_DIR/arvisual-obs-v${VERSION}-linux-x86_64.deb"
+
+      - name: Upload Linux package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: arvisual-linux-x86_64
+          path: |
+            release/*linux-x86_64*.tar.gz
+            release/*linux-x86_64*.deb
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [windows-x64, macos-universal, linux-x86_64]
+    runs-on: ubuntu-24.04
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Download all package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish release page
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: release-assets/*
+          body: |
+            ## ArVisual OBS Plugin
+
+            One-click smart color pop filter for OBS Studio.
+
+            ### Recommended downloads
+
+            **Windows**
+            - `ArVisual-OBS-Setup-...windows-x64.exe` for normal users.
+            - `arvisual-obs-...windows-x64.zip` for manual copy into OBS folder.
+
+            **macOS**
+            - `ArVisual-OBS-Installer-...macos-universal.pkg` for normal users.
+            - `arvisual-obs-...macos-universal-manual.zip` for manual plugin copy.
+
+            **Linux**
+            - `arvisual-obs-...linux-x86_64.deb` for Debian/Ubuntu-style installs.
+            - `arvisual-obs-...linux-x86_64-manual.tar.gz` for manual copy.
