@@ -85,7 +85,6 @@ float3 soft_chroma_compress(float3 color, float amount)
     float3 chroma = color - y.xxx;
     float chroma_len = length(chroma);
 
-    // Lower limit in highlights because saturated highlights clip easily.
     float highlight = smoothstep(0.72, 1.0, y);
     float limit = lerp(0.72, 0.46, saturate(amount + highlight * 0.35));
 
@@ -108,16 +107,12 @@ float4 PSDraw(VertData vert_in) : TARGET
     float3 src_hsv = rgb2hsv(src);
     float src_y = luminance(src);
 
-    // Neutral/white/grey lock is computed before any boost. This is the most
-    // important protection against green/yellow/cyan background casts.
     float low_sat = 1.0 - smoothstep(0.035, 0.18, src_hsv.y);
     float neutral_luma = smoothstep(0.10, 0.38, src_y) * (1.0 - smoothstep(0.96, 1.0, src_y));
     float neutral_mask = saturate(low_sat * neutral_luma);
 
-    // Strong color confidence: do not treat grey/white/low-sat camera noise as object color.
     float color_confidence = smoothstep(0.16, 0.46, src_hsv.y) * smoothstep(0.08, 0.26, src_y) * (1.0 - smoothstep(0.96, 1.0, src_y));
 
-    // Skin-zone protection based on hue + luminance + saturation.
     float skin_hue = max(hue_mask(src_hsv.x, 0.055, 0.050), hue_mask(src_hsv.x, 0.085, 0.050));
     float skin_luma = smoothstep(0.18, 0.42, src_y) * (1.0 - smoothstep(0.88, 1.0, src_y));
     float skin_sat = smoothstep(0.10, 0.38, src_hsv.y) * (1.0 - smoothstep(0.78, 1.0, src_hsv.y));
@@ -125,19 +120,14 @@ float4 PSDraw(VertData vert_in) : TARGET
 
     float3 color = src;
 
-    // 1) Clean neutrals early. Professional-looking color starts from believable
-    // whites/greys, not from saturating low-sat pixels.
     float neutral_clean = neutral_mask * clean_white * 0.72;
     color = lerp(color, src_y.xxx, neutral_clean);
 
-    // Gentle green/cyan cast control in near-neutral areas. This intentionally
-    // stays weak, because true green/cyan objects should not be desaturated.
     float green_cast = saturate((color.g - max(color.r, color.b)) * 4.0);
     float cyan_cast = saturate((min(color.g, color.b) - color.r) * 3.0);
     float cast_guard = neutral_mask * clean_white * 0.28 * saturate(green_cast + cyan_cast);
     color.g = lerp(color.g, (color.r + color.b) * 0.5, cast_guard);
 
-    // 2) High-key tone curve. Work mostly on luma so hue does not drift.
     float y = luminance(color);
     float mid = smoothstep(0.14, 0.46, y) * (1.0 - smoothstep(0.78, 0.98, y));
     float shadow = 1.0 - smoothstep(0.05, 0.24, y);
@@ -148,25 +138,20 @@ float4 PSDraw(VertData vert_in) : TARGET
     target_y += enhance * 0.010 * shadow;
     target_y -= enhance * 0.010 * highlight;
 
-    // Very gentle S-shape: enough to look alive, not enough to crush/clip.
     float s_curve = (target_y - 0.5) * (1.0 + enhance * 0.055) + 0.5;
     target_y = lerp(target_y, s_curve, 0.45);
     target_y = saturate(target_y);
     color = preserve_luma(color, target_y);
 
-    // Recompute after base shaping.
     float3 hsv = rgb2hsv(saturate(color));
     y = luminance(color);
 
-    // 3) Smart vibrance. It must not boost neutral/white/grey and must not
-    // inflate chroma noise in shadows or clipped highlights.
     float luma_safe = smoothstep(0.12, 0.32, y) * (1.0 - smoothstep(0.86, 1.0, y));
     float muted_but_colored = smoothstep(0.07, 0.22, hsv.y) * (1.0 - smoothstep(0.72, 1.0, hsv.y));
     float vibrance = color_pop * muted_but_colored * color_confidence * luma_safe;
     vibrance *= (1.0 - neutral_mask * 0.95);
     vibrance *= (1.0 - skin_mask * 0.80);
 
-    // Hue-zone object pop only for already-colorful pixels.
     float red     = hue_mask(hsv.x, 0.000, 0.040);
     float yellow  = hue_mask(hsv.x, 0.155, 0.044);
     float green   = hue_mask(hsv.x, 0.330, 0.046);
@@ -180,21 +165,16 @@ float4 PSDraw(VertData vert_in) : TARGET
     hsv.y += vibrance * 0.20;
     hsv.y += object_pop * color_pop * 0.070;
 
-    // Avoid yellow/green runaway: technical benches, labels, and white surfaces
-    // often contain weak green/yellow cast that should stay neutral.
     float weak_yellow_green = saturate((yellow + green + cyan) * (1.0 - color_confidence));
     hsv.y *= (1.0 - weak_yellow_green * clean_white * 0.28);
 
     color = hsv2rgb(hsv);
 
-    // Second neutral cleanup after chroma operations, very mild.
     y = luminance(color);
     float3 post_hsv = rgb2hsv(saturate(color));
     float post_neutral = (1.0 - smoothstep(0.05, 0.20, post_hsv.y)) * smoothstep(0.18, 0.92, y);
     color = lerp(color, y.xxx, post_neutral * clean_white * 0.24);
 
-    // 4) Luma-only clarity with noise/flat-area gate. Detail is measured from
-    // the original source only, not from a mix of processed and unprocessed luma.
     float up_y = luminance(image.Sample(textureSampler, vert_in.uv + float2(0.0, texel_size.y)).rgb);
     float down_y = luminance(image.Sample(textureSampler, vert_in.uv - float2(0.0, texel_size.y)).rgb);
     float left_y = luminance(image.Sample(textureSampler, vert_in.uv - float2(texel_size.x, 0.0)).rgb);
@@ -208,18 +188,16 @@ float4 PSDraw(VertData vert_in) : TARGET
     float clarity_mask = edge_gate * (1.0 - flat_guard * 0.85) * (1.0 - skin_mask * 0.78) * smoothstep(0.10, 0.36, y);
     color += detail.xxx * clarity * 0.085 * clarity_scale * clarity_mask;
 
-    // 5) Gloss and highlight handling. Add only subtle sparkle to non-skin,
-    // already-colorful objects; then roll highlights softly instead of hard clipping.
     y = luminance(color);
     float gloss_mask = smoothstep(0.66, 0.92, y) * object_pop * (1.0 - skin_mask * 0.65);
     color += gloss_mask * toy_gloss * 0.010;
 
     float maxc = max(max(color.r, color.g), color.b);
     float roll_zone = smoothstep(0.84, 1.08, maxc);
-    float3 compressed = color / (1.0 + max(color - 1.0.xxx, 0.0.xxx) * (1.0 + highlight_guard * 2.0));
+    float3 over_one = max(color - float3(1.0, 1.0, 1.0), float3(0.0, 0.0, 0.0));
+    float3 compressed = color / (float3(1.0, 1.0, 1.0) + over_one * (1.0 + highlight_guard * 2.0));
     color = lerp(color, compressed, roll_zone * highlight_guard);
 
-    // Final chroma and range safety.
     color = soft_chroma_compress(color, color_pop * 0.30 + highlight_guard * 0.15);
     color = saturate(color);
 
