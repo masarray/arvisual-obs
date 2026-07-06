@@ -2,12 +2,12 @@
  ArVisual Smart Color Enhancer for OBS
  GPL-2.0-or-later
 
- v0.2 perceptual-safe color engine:
+ v0.3 perceptual dopamine + smart skin beauty engine:
  - neutral / white / grey protection first
- - gentle high-key tone shaping, not aggressive contrast
+ - stronger but gated midtone color separation
  - smart vibrance only for real chroma, not neutral pixels
  - object/toy pop only for already-colorful hue zones
- - skin-tone protection
+ - skin-tone beauty: healthy lift, red/yellow control, light texture smoothing
  - luma clarity with flat-area/noise gate
  - soft highlight rolloff and chroma compression
 ******************************************************************************/
@@ -86,7 +86,7 @@ float3 soft_chroma_compress(float3 color, float amount)
     float chroma_len = length(chroma);
 
     float highlight = smoothstep(0.72, 1.0, y);
-    float limit = lerp(0.72, 0.46, saturate(amount + highlight * 0.35));
+    float limit = lerp(0.76, 0.48, saturate(amount + highlight * 0.30));
 
     if (chroma_len > limit) {
         float compression = limit / max(chroma_len, 0.0001);
@@ -111,94 +111,129 @@ float4 PSDraw(VertData vert_in) : TARGET
     float neutral_luma = smoothstep(0.10, 0.38, src_y) * (1.0 - smoothstep(0.96, 1.0, src_y));
     float neutral_mask = saturate(low_sat * neutral_luma);
 
-    float color_confidence = smoothstep(0.16, 0.46, src_hsv.y) * smoothstep(0.08, 0.26, src_y) * (1.0 - smoothstep(0.96, 1.0, src_y));
+    float color_confidence = smoothstep(0.13, 0.38, src_hsv.y) * smoothstep(0.08, 0.24, src_y) * (1.0 - smoothstep(0.97, 1.0, src_y));
 
-    float skin_hue = max(hue_mask(src_hsv.x, 0.055, 0.050), hue_mask(src_hsv.x, 0.085, 0.050));
-    float skin_luma = smoothstep(0.18, 0.42, src_y) * (1.0 - smoothstep(0.88, 1.0, src_y));
-    float skin_sat = smoothstep(0.10, 0.38, src_hsv.y) * (1.0 - smoothstep(0.78, 1.0, src_hsv.y));
+    float skin_hue = max(hue_mask(src_hsv.x, 0.055, 0.052), hue_mask(src_hsv.x, 0.085, 0.052));
+    float skin_luma = smoothstep(0.16, 0.40, src_y) * (1.0 - smoothstep(0.90, 1.0, src_y));
+    float skin_sat = smoothstep(0.08, 0.34, src_hsv.y) * (1.0 - smoothstep(0.82, 1.0, src_hsv.y));
     float skin_mask = saturate(skin_hue * skin_luma * skin_sat * skin_protect);
 
     float3 color = src;
 
-    float neutral_clean = neutral_mask * clean_white * 0.72;
+    // 1) Neutral and white protection first.
+    float neutral_clean = neutral_mask * clean_white * 0.70;
     color = lerp(color, src_y.xxx, neutral_clean);
 
     float green_cast = saturate((color.g - max(color.r, color.b)) * 4.0);
     float cyan_cast = saturate((min(color.g, color.b) - color.r) * 3.0);
-    float cast_guard = neutral_mask * clean_white * 0.28 * saturate(green_cast + cyan_cast);
+    float cast_guard = neutral_mask * clean_white * 0.30 * saturate(green_cast + cyan_cast);
     color.g = lerp(color.g, (color.r + color.b) * 0.5, cast_guard);
 
+    // 2) Stronger dopamine tone shaping, still luma-preserving.
     float y = luminance(color);
-    float mid = smoothstep(0.14, 0.46, y) * (1.0 - smoothstep(0.78, 0.98, y));
+    float mid = smoothstep(0.13, 0.44, y) * (1.0 - smoothstep(0.78, 0.98, y));
+    float upper_mid = smoothstep(0.38, 0.68, y) * (1.0 - smoothstep(0.86, 1.0, y));
     float shadow = 1.0 - smoothstep(0.05, 0.24, y);
     float highlight = smoothstep(0.72, 1.0, y);
 
     float target_y = y;
-    target_y += enhance * 0.030 * mid;
-    target_y += enhance * 0.010 * shadow;
-    target_y -= enhance * 0.010 * highlight;
+    target_y += enhance * 0.050 * mid;
+    target_y += enhance * 0.018 * upper_mid;
+    target_y += enhance * 0.012 * shadow;
+    target_y -= enhance * 0.012 * highlight;
 
-    float s_curve = (target_y - 0.5) * (1.0 + enhance * 0.055) + 0.5;
-    target_y = lerp(target_y, s_curve, 0.45);
+    float s_curve = (target_y - 0.5) * (1.0 + enhance * 0.095) + 0.5;
+    target_y = lerp(target_y, s_curve, 0.55);
     target_y = saturate(target_y);
     color = preserve_luma(color, target_y);
 
     float3 hsv = rgb2hsv(saturate(color));
     y = luminance(color);
 
-    float luma_safe = smoothstep(0.12, 0.32, y) * (1.0 - smoothstep(0.86, 1.0, y));
-    float muted_but_colored = smoothstep(0.07, 0.22, hsv.y) * (1.0 - smoothstep(0.72, 1.0, hsv.y));
+    // 3) Smart vibrance and object pop.
+    float luma_safe = smoothstep(0.10, 0.28, y) * (1.0 - smoothstep(0.88, 1.0, y));
+    float muted_but_colored = smoothstep(0.055, 0.20, hsv.y) * (1.0 - smoothstep(0.78, 1.0, hsv.y));
     float vibrance = color_pop * muted_but_colored * color_confidence * luma_safe;
-    vibrance *= (1.0 - neutral_mask * 0.95);
-    vibrance *= (1.0 - skin_mask * 0.80);
+    vibrance *= (1.0 - neutral_mask * 0.96);
+    vibrance *= (1.0 - skin_mask * 0.72);
 
-    float red     = hue_mask(hsv.x, 0.000, 0.040);
-    float yellow  = hue_mask(hsv.x, 0.155, 0.044);
-    float green   = hue_mask(hsv.x, 0.330, 0.046);
-    float cyan    = hue_mask(hsv.x, 0.500, 0.044);
-    float blue    = hue_mask(hsv.x, 0.620, 0.052);
-    float magenta = hue_mask(hsv.x, 0.835, 0.046);
+    float red     = hue_mask(hsv.x, 0.000, 0.045);
+    float orange  = hue_mask(hsv.x, 0.080, 0.045);
+    float yellow  = hue_mask(hsv.x, 0.155, 0.050);
+    float green   = hue_mask(hsv.x, 0.330, 0.052);
+    float cyan    = hue_mask(hsv.x, 0.500, 0.048);
+    float blue    = hue_mask(hsv.x, 0.620, 0.058);
+    float magenta = hue_mask(hsv.x, 0.835, 0.050);
 
-    float toy_zone = saturate(red + yellow * 0.85 + green * 0.55 + cyan * 0.55 + blue * 0.75 + magenta * 0.65);
-    float object_pop = toy_zone * color_confidence * (1.0 - neutral_mask) * (1.0 - skin_mask);
+    float toy_zone = saturate(red + yellow * 0.92 + green * 0.72 + cyan * 0.68 + blue * 0.95 + magenta * 0.76);
+    float object_pop = toy_zone * color_confidence * (1.0 - neutral_mask) * (1.0 - skin_mask * 0.65);
 
-    hsv.y += vibrance * 0.20;
-    hsv.y += object_pop * color_pop * 0.070;
+    hsv.y += vibrance * 0.34;
+    hsv.y += object_pop * color_pop * 0.135;
 
     float weak_yellow_green = saturate((yellow + green + cyan) * (1.0 - color_confidence));
-    hsv.y *= (1.0 - weak_yellow_green * clean_white * 0.28);
+    hsv.y *= (1.0 - weak_yellow_green * clean_white * 0.24);
 
     color = hsv2rgb(hsv);
 
+    // 4) Smart skin beauty: brighten, clean uneven redness/yellow, and softly smooth
+    // chroma/luma texture without removing edges. Uses Skin Protect as beauty amount.
+    float3 n1 = image.Sample(textureSampler, vert_in.uv + float2(texel_size.x, 0.0)).rgb;
+    float3 n2 = image.Sample(textureSampler, vert_in.uv - float2(texel_size.x, 0.0)).rgb;
+    float3 n3 = image.Sample(textureSampler, vert_in.uv + float2(0.0, texel_size.y)).rgb;
+    float3 n4 = image.Sample(textureSampler, vert_in.uv - float2(0.0, texel_size.y)).rgb;
+    float3 smooth_src = (src + n1 + n2 + n3 + n4) * 0.20;
+    float smooth_y = luminance(smooth_src);
+    float skin_detail = abs(src_y - smooth_y);
+    float skin_smooth_gate = (1.0 - smoothstep(0.018, 0.075, skin_detail));
+    float beauty_amount = skin_mask * skin_smooth_gate * lerp(0.07, 0.16, skin_protect);
+
+    float3 beauty = lerp(color, smooth_src, beauty_amount);
+    float beauty_y = luminance(beauty);
+    float healthy_lift = skin_mask * skin_protect * 0.032 * (1.0 - smoothstep(0.74, 0.94, beauty_y));
+    beauty = preserve_luma(beauty, saturate(beauty_y + healthy_lift));
+
+    float3 beauty_hsv = rgb2hsv(saturate(beauty));
+    float too_red = red * skin_mask;
+    float too_yellow = yellow * skin_mask;
+    beauty_hsv.y *= (1.0 - too_red * 0.055 * skin_protect);
+    beauty_hsv.y *= (1.0 - too_yellow * 0.040 * skin_protect);
+    beauty_hsv.x = lerp(beauty_hsv.x, 0.073, skin_mask * skin_protect * 0.030);
+    beauty = hsv2rgb(beauty_hsv);
+    color = lerp(color, beauty, skin_mask * skin_protect * 0.72);
+
+    // 5) Post-neutral cleanup after chroma operations.
     y = luminance(color);
     float3 post_hsv = rgb2hsv(saturate(color));
     float post_neutral = (1.0 - smoothstep(0.05, 0.20, post_hsv.y)) * smoothstep(0.18, 0.92, y);
-    color = lerp(color, y.xxx, post_neutral * clean_white * 0.24);
+    color = lerp(color, y.xxx, post_neutral * clean_white * 0.20);
 
-    float up_y = luminance(image.Sample(textureSampler, vert_in.uv + float2(0.0, texel_size.y)).rgb);
-    float down_y = luminance(image.Sample(textureSampler, vert_in.uv - float2(0.0, texel_size.y)).rgb);
-    float left_y = luminance(image.Sample(textureSampler, vert_in.uv - float2(texel_size.x, 0.0)).rgb);
-    float right_y = luminance(image.Sample(textureSampler, vert_in.uv + float2(texel_size.x, 0.0)).rgb);
+    // 6) Luma-only clarity with noise gate.
+    float up_y = luminance(n3);
+    float down_y = luminance(n4);
+    float left_y = luminance(n2);
+    float right_y = luminance(n1);
     float blur_y = (up_y + down_y + left_y + right_y) * 0.25;
     float detail = src_y - blur_y;
 
-    float edge_gate = smoothstep(0.018, 0.065, abs(detail));
-    float flat_guard = 1.0 - smoothstep(0.000, 0.020, abs(detail));
-    float clarity_scale = lerp(0.55, 0.95, performance);
-    float clarity_mask = edge_gate * (1.0 - flat_guard * 0.85) * (1.0 - skin_mask * 0.78) * smoothstep(0.10, 0.36, y);
-    color += detail.xxx * clarity * 0.085 * clarity_scale * clarity_mask;
+    float edge_gate = smoothstep(0.016, 0.058, abs(detail));
+    float flat_guard = 1.0 - smoothstep(0.000, 0.018, abs(detail));
+    float clarity_scale = lerp(0.64, 1.12, performance);
+    float clarity_mask = edge_gate * (1.0 - flat_guard * 0.85) * (1.0 - skin_mask * 0.86) * smoothstep(0.08, 0.30, y);
+    color += detail.xxx * clarity * 0.115 * clarity_scale * clarity_mask;
 
+    // 7) Gloss/highlight pop for objects, not faces.
     y = luminance(color);
-    float gloss_mask = smoothstep(0.66, 0.92, y) * object_pop * (1.0 - skin_mask * 0.65);
-    color += gloss_mask * toy_gloss * 0.010;
+    float gloss_mask = smoothstep(0.62, 0.91, y) * object_pop * (1.0 - skin_mask * 0.75);
+    color += gloss_mask * toy_gloss * 0.018;
 
     float maxc = max(max(color.r, color.g), color.b);
-    float roll_zone = smoothstep(0.84, 1.08, maxc);
+    float roll_zone = smoothstep(0.83, 1.08, maxc);
     float3 over_one = max(color - float3(1.0, 1.0, 1.0), float3(0.0, 0.0, 0.0));
-    float3 compressed = color / (float3(1.0, 1.0, 1.0) + over_one * (1.0 + highlight_guard * 2.0));
+    float3 compressed = color / (float3(1.0, 1.0, 1.0) + over_one * (1.0 + highlight_guard * 2.2));
     color = lerp(color, compressed, roll_zone * highlight_guard);
 
-    color = soft_chroma_compress(color, color_pop * 0.30 + highlight_guard * 0.15);
+    color = soft_chroma_compress(color, color_pop * 0.28 + highlight_guard * 0.13);
     color = saturate(color);
 
     return float4(color * alpha, alpha);
