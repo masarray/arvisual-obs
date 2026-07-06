@@ -1,0 +1,95 @@
+# ArVisual / OBS native plugin repo
+# Keep this repo source-only. Build caches, local deps, generated binaries,
+# release packages, logs, and editor state must not be committed.
+
+# Build folders / CMake outputs
+.build/
+build/
+build-*/
+build_*/
+out/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+CMakeUserPresets.json
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+
+# Visual Studio / MSBuild local state
+.vs/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+*.opensdf
+*.sdf
+*.ipch
+
+# Local dependency cache downloaded by one-click build
+.deps/
+deps/
+third_party/_cache/
+
+# Local OBS plugin template workspace/cache
+obs-plugintemplate/
+
+# Release/package outputs
+release/
+package/
+package-*/
+package-programdata/
+artifacts/
+dist/
+
+# Binaries and generated build products
+*.dll
+*.exe
+*.pdb
+*.lib
+*.exp
+*.ilk
+*.obj
+*.o
+*.a
+*.so
+*.dylib
+*.dSYM/
+*.app/
+*.msi
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+*.deb
+*.rpm
+
+# Logs / temp / backups
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.swp
+*.swo
+*.cache
+*.pid
+
+# Test / coverage output
+coverage/
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+
+# OS/editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/.browse.VC.db
+.vscode/ipch/
+.vscode/.cmake/
+.vscode/.cache/

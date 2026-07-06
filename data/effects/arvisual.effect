@@ -1,0 +1,187 @@
+/******************************************************************************
+ ArVisual Smart Color Enhancer for OBS
+ GPL-2.0-or-later
+
+ One-pass real-time color pop shader:
+ - high-key clean base
+ - smart vibrance
+ - skin-tone protection
+ - selective toy/object color pop
+ - white cleaner
+ - luma-only clarity
+ - glossy highlight guard
+******************************************************************************/
+
+uniform float4x4 ViewProj;
+uniform texture2d image;
+
+uniform float enhance;
+uniform float color_pop;
+uniform float clean_white;
+uniform float clarity;
+uniform float skin_protect;
+uniform float toy_gloss;
+uniform float highlight_guard;
+uniform float performance;
+uniform float2 texel_size;
+
+sampler_state textureSampler {
+    Filter   = Linear;
+    AddressU = Clamp;
+    AddressV = Clamp;
+};
+
+struct VertData {
+    float4 pos : POSITION;
+    float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData vert_in)
+{
+    VertData vert_out;
+    vert_out.pos = mul(float4(vert_in.pos.xyz, 1.0), ViewProj);
+    vert_out.uv = vert_in.uv;
+    return vert_out;
+}
+
+float luminance(float3 color)
+{
+    return dot(color, float3(0.2126, 0.7152, 0.0722));
+}
+
+float3 rgb2hsv(float3 c)
+{
+    float4 K = float4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+    float4 p = c.g < c.b ? float4(c.bg, K.wz) : float4(c.gb, K.xy);
+    float4 q = c.r < p.x ? float4(p.xyw, c.r) : float4(c.r, p.yzx);
+    float d = q.x - min(q.w, q.y);
+    float e = 1.0e-10;
+    return float3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+
+float3 hsv2rgb(float3 c)
+{
+    float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    float3 p = abs(frac(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * lerp(K.xxx, saturate(p - K.xxx), c.y);
+}
+
+float hue_mask(float hue, float center, float width)
+{
+    float d = abs(hue - center);
+    d = min(d, 1.0 - d);
+    return saturate(1.0 - d / width);
+}
+
+float3 soft_saturation_compress(float3 color, float amount)
+{
+    float y = luminance(color);
+    float3 chroma = color - y.xxx;
+    float chroma_len = length(chroma);
+    float limit = lerp(0.82, 0.58, amount);
+    float compression = 1.0;
+
+    if (chroma_len > limit) {
+        compression = limit / max(chroma_len, 0.0001);
+        compression = lerp(1.0, compression, 0.75);
+    }
+
+    return y.xxx + chroma * compression;
+}
+
+float4 PSDraw(VertData vert_in) : TARGET
+{
+    float4 px = image.Sample(textureSampler, vert_in.uv);
+    float alpha = px.a;
+    float3 color = px.rgb * ((alpha > 0.0) ? (1.0 / alpha) : 0.0);
+    color = saturate(color);
+
+    float y0 = luminance(color);
+
+    // 1) High-key dopamine tone curve: cheerful lift without washing out highlight.
+    float contrast = 1.0 + enhance * 0.20;
+    float lift = enhance * 0.045;
+    color = (color - 0.5) * contrast + 0.5 + lift;
+    color = saturate(color);
+
+    // Midtone brightness lift, weaker in highlights.
+    float y1 = luminance(color);
+    float mid_mask = smoothstep(0.12, 0.52, y1) * (1.0 - smoothstep(0.78, 1.0, y1));
+    color += mid_mask * enhance * 0.055;
+
+    // 2) Smart vibrance + hue-zone object pop.
+    float3 hsv = rgb2hsv(saturate(color));
+    float y = luminance(color);
+
+    // Approximate skin-zone protection: orange/red-yellow hue in human-skin luminance range.
+    float skin_hue = max(hue_mask(hsv.x, 0.055, 0.055), hue_mask(hsv.x, 0.085, 0.050));
+    float skin_luma = smoothstep(0.16, 0.38, y) * (1.0 - smoothstep(0.86, 1.0, y));
+    float skin_sat = smoothstep(0.08, 0.48, hsv.y) * (1.0 - smoothstep(0.78, 1.0, hsv.y));
+    float skin_mask = saturate(skin_hue * skin_luma * skin_sat * skin_protect);
+
+    // Muted colors get stronger boost; already intense colors get less boost.
+    float muted = 1.0 - hsv.y;
+    float vibrance = color_pop * muted * 0.46;
+    vibrance *= (1.0 - skin_mask * 0.78);
+
+    float red     = hue_mask(hsv.x, 0.000, 0.045);
+    float orange  = hue_mask(hsv.x, 0.080, 0.040);
+    float yellow  = hue_mask(hsv.x, 0.155, 0.052);
+    float green   = hue_mask(hsv.x, 0.330, 0.065);
+    float cyan    = hue_mask(hsv.x, 0.500, 0.055);
+    float blue    = hue_mask(hsv.x, 0.620, 0.068);
+    float magenta = hue_mask(hsv.x, 0.835, 0.055);
+
+    float toy_mask = saturate(red + yellow + green + cyan + blue + magenta);
+    toy_mask *= (1.0 - skin_mask);
+
+    hsv.y += vibrance;
+    hsv.y += toy_mask * color_pop * 0.20;
+    hsv.y -= orange * skin_mask * color_pop * 0.16;
+
+    // White cleaner: reduce color cast in bright low-saturation zones.
+    float near_white = smoothstep(0.58, 0.93, hsv.z) * (1.0 - smoothstep(0.06, 0.28, hsv.y));
+    hsv.y *= 1.0 - near_white * clean_white * 0.40;
+    hsv.z += near_white * clean_white * 0.055;
+
+    color = hsv2rgb(hsv);
+
+    // 3) Luma-only clarity. Ultra mode gets a little more clarity; Lite mode less.
+    float clarity_scale = lerp(0.72, 1.16, performance);
+    float center_y = luminance(color);
+    float up_y = luminance(image.Sample(textureSampler, vert_in.uv + float2(0.0, texel_size.y)).rgb);
+    float down_y = luminance(image.Sample(textureSampler, vert_in.uv - float2(0.0, texel_size.y)).rgb);
+    float left_y = luminance(image.Sample(textureSampler, vert_in.uv - float2(texel_size.x, 0.0)).rgb);
+    float right_y = luminance(image.Sample(textureSampler, vert_in.uv + float2(texel_size.x, 0.0)).rgb);
+    float blur_y = (up_y + down_y + left_y + right_y) * 0.25;
+    float detail = center_y - blur_y;
+
+    // Reduce clarity on skin and in very dark areas to avoid noisy/rough faces.
+    float clarity_mask = (1.0 - skin_mask * 0.70) * smoothstep(0.10, 0.32, center_y);
+    color += detail.xxx * clarity * 0.38 * clarity_scale * clarity_mask;
+
+    // 4) Glossy toy highlight + highlight guard.
+    float yh = luminance(color);
+    float gloss_mask = smoothstep(0.64, 0.95, yh) * (1.0 - skin_mask * 0.55);
+    color += gloss_mask * toy_gloss * 0.035;
+
+    // Smooth highlight rolloff to prevent pop colors from clipping harshly.
+    float3 rolloff = 1.0 - exp(-max(color, 0.0));
+    float highlight_zone = smoothstep(0.80, 1.08, max(max(color.r, color.g), color.b));
+    color = lerp(color, rolloff, highlight_zone * highlight_guard * 0.30);
+
+    // 5) Gamut safety.
+    color = soft_saturation_compress(color, color_pop * 0.45);
+    color = saturate(color);
+
+    return float4(color * alpha, alpha);
+}
+
+technique Draw
+{
+    pass
+    {
+        vertex_shader = VSDefault(vert_in);
+        pixel_shader  = PSDraw(vert_in);
+    }
+}
