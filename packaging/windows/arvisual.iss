@@ -10,7 +10,7 @@
 #endif
 
 [Setup]
-AppId={{5B3E3D32-314A-4D1F-BBB7-ARVISUAL001}}
+AppId={{5B3E3D32-314A-4D1F-BBB7-9A9E8F0A0011}}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher=Mas Ari
@@ -29,7 +29,6 @@ OutputBaseFilename=ArVisual-OBS-Setup-v{#AppVersion}-windows-x64
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
-SetupIconFile=
 UninstallDisplayName=ArVisual Smart Color Enhancer for OBS
 
 [Languages]
