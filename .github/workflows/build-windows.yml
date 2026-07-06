@@ -1,40 +1,20 @@
-name: Build Windows Release
+name: Legacy Windows Build
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
-    tags: [ 'v*.*.*' ]
-  pull_request:
-    branches: [ main ]
-
-permissions:
-  contents: write
 
 jobs:
   windows-x64:
-    name: Windows x64
+    name: Windows x64 manual build
     runs-on: windows-2022
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Build and package
         shell: pwsh
-        run: ./scripts/build-local-windows.ps1 -Configuration RelWithDebInfo -Ci
-
-      - name: Upload ZIP artifact
+        run: ./scripts/build-local-windows.ps1 -Configuration RelWithDebInfo -VisualStudio 2022 -Ci
+      - name: Upload Windows ZIP artifact
         uses: actions/upload-artifact@v4
         with:
-          name: arvisual-obs-windows-x64
+          name: arvisual-obs-windows-x64-manual
           path: release/*.zip
-
-      - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: release/*.zip
-          draft: false
-          prerelease: false
-          generate_release_notes: true
