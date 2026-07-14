@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string] $StageRoot,
 
-    [string] $Version = "0.1.0",
+    [string] $Version = "0.5.7",
     [string] $Configuration = "RelWithDebInfo"
 )
 
@@ -39,7 +39,21 @@ $DataCandidates = @(
 )
 $DataRoot = $DataCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 if (-not $DataRoot) { throw "ArVisual data folder was not found under stage root: $StageRoot" }
-Copy-Item -LiteralPath (Join-Path $DataRoot '*') -Destination (Join-Path $PackageRoot 'data/obs-plugins/arvisual') -Recurse -Force
+Get-ChildItem -LiteralPath $DataRoot -Force |
+    Copy-Item -Destination (Join-Path $PackageRoot 'data/obs-plugins/arvisual') -Recurse -Force
+
+$RequiredPackageFiles = @(
+    'obs-plugins/64bit/arvisual.dll',
+    'data/obs-plugins/arvisual/effects/arvisual.effect',
+    'data/obs-plugins/arvisual/locale/en-US.ini',
+    'data/obs-plugins/arvisual/locale/id-ID.ini'
+)
+foreach ($relativePath in $RequiredPackageFiles) {
+    $packagePath = Join-Path $PackageRoot $relativePath
+    if (-not (Test-Path -LiteralPath $packagePath -PathType Leaf)) {
+        throw "Required package payload is missing: $packagePath"
+    }
+}
 
 @"
 ArVisual Smart Color Enhancer for OBS
@@ -135,22 +149,40 @@ if (`$obsProcess) {
 `$sourceObsPlugins = Join-Path `$PackageRoot 'obs-plugins'
 `$sourceData = Join-Path `$PackageRoot 'data'
 
+`$requiredPayload = @(
+    'obs-plugins\64bit\arvisual.dll',
+    'data\obs-plugins\arvisual\effects\arvisual.effect',
+    'data\obs-plugins\arvisual\locale\en-US.ini',
+    'data\obs-plugins\arvisual\locale\id-ID.ini'
+)
+
 if (-not (Test-Path -LiteralPath `$sourceObsPlugins)) { throw "Package is missing folder: `$sourceObsPlugins" }
 if (-not (Test-Path -LiteralPath `$sourceData)) { throw "Package is missing folder: `$sourceData" }
+foreach (`$relativePath in `$requiredPayload) {
+    `$sourcePath = Join-Path `$PackageRoot `$relativePath
+    if (-not (Test-Path -LiteralPath `$sourcePath -PathType Leaf)) {
+        throw "Package is missing required file: `$sourcePath"
+    }
+}
 
 Write-Host "[INFO] Package root: `$PackageRoot"
 Write-Host "[INFO] Installing ArVisual to: `$ObsRoot"
 Copy-Item -LiteralPath `$sourceObsPlugins -Destination `$ObsRoot -Recurse -Force
 Copy-Item -LiteralPath `$sourceData -Destination `$ObsRoot -Recurse -Force
 
-`$checks = @(
-    (Join-Path `$ObsRoot 'obs-plugins\64bit\arvisual.dll'),
-    (Join-Path `$ObsRoot 'data\obs-plugins\arvisual\effects\arvisual.effect'),
-    (Join-Path `$ObsRoot 'data\obs-plugins\arvisual\locale\en-US.ini')
-)
+foreach (`$relativePath in `$requiredPayload) {
+    `$sourcePath = Join-Path `$PackageRoot `$relativePath
+    `$destinationPath = Join-Path `$ObsRoot `$relativePath
+    if (-not (Test-Path -LiteralPath `$destinationPath -PathType Leaf)) {
+        throw "Missing expected installed file: `$destinationPath"
+    }
 
-foreach (`$path in `$checks) {
-    if (Test-Path -LiteralPath `$path) { Write-Host "[OK] `$path" } else { throw "Missing expected installed file: `$path" }
+    `$sourceHash = (Get-FileHash -LiteralPath `$sourcePath -Algorithm SHA256).Hash
+    `$destinationHash = (Get-FileHash -LiteralPath `$destinationPath -Algorithm SHA256).Hash
+    if (`$sourceHash -ne `$destinationHash) {
+        throw "Installed file does not match the package payload: `$destinationPath"
+    }
+    Write-Host "[OK] `$destinationPath"
 }
 
 Write-Host ''
@@ -204,4 +236,18 @@ if (Test-Path -LiteralPath `$logDir) {
 
 if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
 Compress-Archive -Path (Join-Path $PackageRoot '*') -DestinationPath $ZipPath -Force
+
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$archive = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+try {
+    $archiveEntries = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
+    foreach ($relativePath in $RequiredPackageFiles) {
+        $entryName = $relativePath.Replace('\', '/')
+        if ($entryName -notin $archiveEntries) {
+            throw "Required payload is missing from ZIP: $entryName"
+        }
+    }
+} finally {
+    $archive.Dispose()
+}
 Write-Host "Packaged: $ZipPath"
