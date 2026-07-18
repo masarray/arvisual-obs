@@ -116,7 +116,7 @@ begin
     ObsDir := Candidate;
 end;
 
-function FindObsFromAppPaths(RootKey: Integer; var ObsDir: String): Boolean;
+function FindObsFromAppPaths(RootKey: HKEY; var ObsDir: String): Boolean;
 var
   Value: String;
 begin
@@ -133,7 +133,7 @@ begin
   end;
 end;
 
-function FindObsFromUninstall(RootKey: Integer; var ObsDir: String): Boolean;
+function FindObsFromUninstall(RootKey: HKEY; var ObsDir: String): Boolean;
 var
   UninstallRoot: String;
   SubKeys: TArrayOfString;
@@ -147,6 +147,9 @@ begin
   UninstallRoot := 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall';
 
   if not RegGetSubkeyNames(RootKey, UninstallRoot, SubKeys) then
+    exit;
+
+  if GetArrayLength(SubKeys) = 0 then
     exit;
 
   for I := 0 to GetArrayLength(SubKeys) - 1 do
@@ -182,13 +185,17 @@ begin
   end;
 end;
 
-function FindObsInRegistryView(var ObsDir: String): Boolean;
+function FindObsInRegistry(var ObsDir: String): Boolean;
 begin
   Result :=
-    FindObsFromAppPaths(HKLM, ObsDir) or
-    FindObsFromAppPaths(HKCU, ObsDir) or
-    FindObsFromUninstall(HKLM, ObsDir) or
-    FindObsFromUninstall(HKCU, ObsDir);
+    FindObsFromAppPaths(HKLM64, ObsDir) or
+    FindObsFromAppPaths(HKCU64, ObsDir) or
+    FindObsFromUninstall(HKLM64, ObsDir) or
+    FindObsFromUninstall(HKCU64, ObsDir) or
+    FindObsFromAppPaths(HKLM32, ObsDir) or
+    FindObsFromAppPaths(HKCU32, ObsDir) or
+    FindObsFromUninstall(HKLM32, ObsDir) or
+    FindObsFromUninstall(HKCU32, ObsDir);
 end;
 
 function FindObsInstallDir(var ObsDir: String): Boolean;
@@ -198,21 +205,11 @@ begin
   Result := False;
   ObsDir := '';
 
-  SetRegView(rv64Bit);
-  if FindObsInRegistryView(ObsDir) then
+  if FindObsInRegistry(ObsDir) then
   begin
     Result := True;
     exit;
   end;
-
-  SetRegView(rv32Bit);
-  if FindObsInRegistryView(ObsDir) then
-  begin
-    SetRegView(rv64Bit);
-    Result := True;
-    exit;
-  end;
-  SetRegView(rv64Bit);
 
   Candidate := ExpandConstant('{autopf}\obs-studio');
   if TryObsDirectory(Candidate, ObsDir) then
