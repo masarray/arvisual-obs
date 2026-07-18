@@ -11,7 +11,7 @@ permissions:
 
 env:
   CONFIGURATION: Release
-  TEMPLATE_REF: master
+  TEMPLATE_REF: 3e7d7ac3b5342cd7d9b88890b9c70b472d1520fc
 
 jobs:
   preflight:
@@ -39,7 +39,7 @@ jobs:
 
       - name: Build manual Windows ZIP
         shell: pwsh
-        run: ./scripts/build-local-windows.ps1 -Configuration $env:CONFIGURATION -VisualStudio 2022 -Ci
+        run: ./scripts/build-local-windows.ps1 -Configuration $env:CONFIGURATION -VisualStudio 2022 -TemplateRef $env:TEMPLATE_REF -Ci
 
       - name: Read version
         id: version
@@ -53,10 +53,12 @@ jobs:
         run: |
           $zip = Get-ChildItem -Path release -Filter '*windows-x64.zip' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (-not $zip) { throw 'Windows manual ZIP was not found in release/.' }
+
           $manual = Join-Path $PWD 'dist/windows-manual'
           if (Test-Path $manual) { Remove-Item $manual -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $manual | Out-Null
           Expand-Archive -Path $zip.FullName -DestinationPath $manual -Force
+
           $required = @(
             'obs-plugins/64bit/arvisual.dll',
             'data/obs-plugins/arvisual/effects/arvisual.effect',
@@ -67,6 +69,7 @@ jobs:
             $path = Join-Path $manual $item
             if (-not (Test-Path $path -PathType Leaf)) { throw "Installer source is missing: $path" }
           }
+
           "manual=$manual" >> $env:GITHUB_ENV
 
       - name: Install Inno Setup
@@ -114,12 +117,16 @@ jobs:
           version="$(python3 -c 'import json; print(json.load(open("buildspec.json"))["version"])')"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Overlay ArVisual into official OBS plugin template
+      - name: Resolve pinned OBS plugin template
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p .build
-          git clone --depth 1 --branch "$TEMPLATE_REF" https://github.com/obsproject/obs-plugintemplate.git .build/obs-plugintemplate
+          mkdir -p .build/obs-plugintemplate
+          git -C .build/obs-plugintemplate init
+          git -C .build/obs-plugintemplate remote add origin https://github.com/obsproject/obs-plugintemplate.git
+          git -C .build/obs-plugintemplate fetch --depth 1 origin "$TEMPLATE_REF"
+          git -C .build/obs-plugintemplate checkout --detach FETCH_HEAD
+
           for item in src data CMakeLists.txt CMakePresets.json buildspec.json; do
             rm -rf ".build/obs-plugintemplate/$item"
             cp -R "$item" ".build/obs-plugintemplate/$item"
@@ -138,8 +145,7 @@ jobs:
       - name: Install to stage
         shell: bash
         working-directory: .build/obs-plugintemplate
-        run: |
-          cmake --install build_macos --prefix "$GITHUB_WORKSPACE/dist/macos-stage" --config "$CONFIGURATION"
+        run: cmake --install build_macos --prefix "$GITHUB_WORKSPACE/dist/macos-stage" --config "$CONFIGURATION"
 
       - name: Package macOS PKG and manual ZIP
         shell: bash
@@ -147,7 +153,10 @@ jobs:
           set -euo pipefail
           VERSION='${{ steps.version.outputs.version }}'
           RELEASE_DIR="$GITHUB_WORKSPACE/release"
-          mkdir -p "$RELEASE_DIR" "$GITHUB_WORKSPACE/dist/macos-manual" "$GITHUB_WORKSPACE/dist/macos-pkg-root/Library/Application Support/obs-studio/plugins"
+          MANUAL_DIR="$GITHUB_WORKSPACE/dist/macos-manual"
+          PKG_ROOT="$GITHUB_WORKSPACE/dist/macos-pkg-root"
+
+          mkdir -p "$RELEASE_DIR" "$MANUAL_DIR" "$PKG_ROOT/Library/Application Support/obs-studio/plugins"
 
           PLUGIN="$(find "$GITHUB_WORKSPACE/dist/macos-stage" -name 'arvisual.plugin' -type d | head -n 1)"
           if [[ -z "$PLUGIN" ]]; then
@@ -158,8 +167,8 @@ jobs:
             exit 1
           fi
 
-          cp -R "$PLUGIN" "$GITHUB_WORKSPACE/dist/macos-manual/arvisual.plugin"
-          cat > "$GITHUB_WORKSPACE/dist/macos-manual/README-INSTALL-MACOS.txt" <<'TXT'
+          cp -R "$PLUGIN" "$MANUAL_DIR/arvisual.plugin"
+          cat > "$MANUAL_DIR/README-INSTALL-MACOS.txt" <<'TXT'
           ArVisual Smart Color Enhancer for OBS - macOS manual install
 
           1. Close OBS Studio.
@@ -168,11 +177,11 @@ jobs:
           3. Open OBS Studio.
           4. Add filter: ArVisual - Smart Color Enhancer.
           TXT
-          (cd "$GITHUB_WORKSPACE/dist/macos-manual" && zip -qry "$RELEASE_DIR/arvisual-obs-v${VERSION}-macos-universal-manual.zip" .)
+          (cd "$MANUAL_DIR" && zip -qry "$RELEASE_DIR/arvisual-obs-v${VERSION}-macos-universal-manual.zip" .)
 
-          cp -R "$PLUGIN" "$GITHUB_WORKSPACE/dist/macos-pkg-root/Library/Application Support/obs-studio/plugins/arvisual.plugin"
+          cp -R "$PLUGIN" "$PKG_ROOT/Library/Application Support/obs-studio/plugins/arvisual.plugin"
           pkgbuild \
-            --root "$GITHUB_WORKSPACE/dist/macos-pkg-root" \
+            --root "$PKG_ROOT" \
             --install-location / \
             --identifier com.masari.arvisual-obs \
             --version "$VERSION" \
@@ -210,12 +219,16 @@ jobs:
           version="$(python3 -c 'import json; print(json.load(open("buildspec.json"))["version"])')"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Overlay ArVisual into official OBS plugin template
+      - name: Resolve pinned OBS plugin template
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p .build
-          git clone --depth 1 --branch "$TEMPLATE_REF" https://github.com/obsproject/obs-plugintemplate.git .build/obs-plugintemplate
+          mkdir -p .build/obs-plugintemplate
+          git -C .build/obs-plugintemplate init
+          git -C .build/obs-plugintemplate remote add origin https://github.com/obsproject/obs-plugintemplate.git
+          git -C .build/obs-plugintemplate fetch --depth 1 origin "$TEMPLATE_REF"
+          git -C .build/obs-plugintemplate checkout --detach FETCH_HEAD
+
           for item in src data CMakeLists.txt CMakePresets.json buildspec.json; do
             rm -rf ".build/obs-plugintemplate/$item"
             cp -R "$item" ".build/obs-plugintemplate/$item"
@@ -234,8 +247,7 @@ jobs:
       - name: Install to stage
         shell: bash
         working-directory: .build/obs-plugintemplate
-        run: |
-          cmake --install build_x86_64 --prefix "$GITHUB_WORKSPACE/dist/linux-stage"
+        run: cmake --install build_x86_64 --prefix "$GITHUB_WORKSPACE/dist/linux-stage"
 
       - name: Package Linux DEB and manual TAR.GZ
         shell: bash
@@ -243,10 +255,13 @@ jobs:
           set -euo pipefail
           VERSION='${{ steps.version.outputs.version }}'
           RELEASE_DIR="$GITHUB_WORKSPACE/release"
-          mkdir -p "$RELEASE_DIR" "$GITHUB_WORKSPACE/dist/linux-manual" "$GITHUB_WORKSPACE/dist/linux-deb/DEBIAN"
+          MANUAL_DIR="$GITHUB_WORKSPACE/dist/linux-manual"
+          DEB_ROOT="$GITHUB_WORKSPACE/dist/linux-deb"
 
-          cp -a "$GITHUB_WORKSPACE/dist/linux-stage/." "$GITHUB_WORKSPACE/dist/linux-manual/"
-          cat > "$GITHUB_WORKSPACE/dist/linux-manual/README-INSTALL-LINUX.txt" <<'TXT'
+          mkdir -p "$RELEASE_DIR" "$MANUAL_DIR" "$DEB_ROOT/DEBIAN"
+          cp -a "$GITHUB_WORKSPACE/dist/linux-stage/." "$MANUAL_DIR/"
+
+          cat > "$MANUAL_DIR/README-INSTALL-LINUX.txt" <<'TXT'
           ArVisual Smart Color Enhancer for OBS - Linux manual install
 
           Copy the staged folders into /usr/local, or copy the plugin library and data files into the matching OBS plugin paths used by your distro.
@@ -255,12 +270,12 @@ jobs:
           - /usr/lib/x86_64-linux-gnu/obs-plugins/
           - /usr/share/obs/obs-plugins/arvisual/
           TXT
-          tar -C "$GITHUB_WORKSPACE/dist/linux-manual" -czf "$RELEASE_DIR/arvisual-obs-v${VERSION}-linux-x86_64-manual.tar.gz" .
+          tar -C "$MANUAL_DIR" -czf "$RELEASE_DIR/arvisual-obs-v${VERSION}-linux-x86_64-manual.tar.gz" .
 
-          mkdir -p "$GITHUB_WORKSPACE/dist/linux-deb/usr"
-          cp -a "$GITHUB_WORKSPACE/dist/linux-stage/." "$GITHUB_WORKSPACE/dist/linux-deb/usr/"
-          INSTALLED_SIZE=$(du -sk "$GITHUB_WORKSPACE/dist/linux-deb/usr" | cut -f1)
-          cat > "$GITHUB_WORKSPACE/dist/linux-deb/DEBIAN/control" <<EOF
+          mkdir -p "$DEB_ROOT/usr"
+          cp -a "$GITHUB_WORKSPACE/dist/linux-stage/." "$DEB_ROOT/usr/"
+          INSTALLED_SIZE="$(du -sk "$DEB_ROOT/usr" | cut -f1)"
+          cat > "$DEB_ROOT/DEBIAN/control" <<EOF
           Package: arvisual-obs
           Version: ${VERSION}
           Section: video
@@ -272,7 +287,7 @@ jobs:
           Description: ArVisual Smart Color Enhancer for OBS Studio
            Scene-adaptive smart color enhancement for OBS Studio.
           EOF
-          dpkg-deb --build "$GITHUB_WORKSPACE/dist/linux-deb" "$RELEASE_DIR/arvisual-obs-v${VERSION}-linux-x86_64.deb"
+          dpkg-deb --build "$DEB_ROOT" "$RELEASE_DIR/arvisual-obs-v${VERSION}-linux-x86_64.deb"
 
       - name: Upload Linux package artifacts
         uses: actions/upload-artifact@v4
