@@ -7,15 +7,30 @@ on:
       - 'v*.*.*'
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CONFIGURATION: Release
   TEMPLATE_REF: master
 
 jobs:
+  preflight:
+    name: Validate release tag and metadata
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate repository consistency
+        run: python3 scripts/validate-repository.py
+
+      - name: Run deterministic color-safety regression
+        run: python3 scripts/validate-color-safety.py
+
   windows-x64:
     name: Windows x64 installer and manual ZIP
+    needs: preflight
     runs-on: windows-2022
 
     steps:
@@ -45,11 +60,12 @@ jobs:
           $required = @(
             'obs-plugins/64bit/arvisual.dll',
             'data/obs-plugins/arvisual/effects/arvisual.effect',
-            'data/obs-plugins/arvisual/locale/en-US.ini'
+            'data/obs-plugins/arvisual/locale/en-US.ini',
+            'data/obs-plugins/arvisual/locale/id-ID.ini'
           )
           foreach ($item in $required) {
             $path = Join-Path $manual $item
-            if (-not (Test-Path $path)) { throw "Installer source is missing: $path" }
+            if (-not (Test-Path $path -PathType Leaf)) { throw "Installer source is missing: $path" }
           }
           "manual=$manual" >> $env:GITHUB_ENV
 
@@ -62,7 +78,15 @@ jobs:
         run: |
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
           if (-not (Test-Path $iscc)) { throw "ISCC.exe was not found at $iscc" }
+
           & $iscc "/DAppVersion=${{ steps.version.outputs.version }}" "/DSourceDir=$env:manual" "/DOutputDir=$PWD\release" "packaging\windows\arvisual.iss"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup compilation failed with exit code $LASTEXITCODE"
+          }
+
+          $installer = Get-ChildItem -Path release -Filter '*windows-x64.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'Windows installer EXE was not produced.' }
+          Write-Host "Built $($installer.FullName)"
 
       - name: Upload Windows package artifacts
         uses: actions/upload-artifact@v4
@@ -71,9 +95,12 @@ jobs:
           path: |
             release/*windows-x64.zip
             release/*windows-x64.exe
+          if-no-files-found: error
+          retention-days: 7
 
   macos-universal:
     name: macOS universal PKG and manual ZIP
+    needs: preflight
     runs-on: macos-15
 
     steps:
@@ -158,9 +185,12 @@ jobs:
           path: |
             release/*macos-universal*.zip
             release/*macos-universal*.pkg
+          if-no-files-found: error
+          retention-days: 7
 
   linux-x86_64:
     name: Linux x86_64 DEB and manual TAR.GZ
+    needs: preflight
     runs-on: ubuntu-24.04
 
     steps:
@@ -240,7 +270,7 @@ jobs:
           Maintainer: Mas Ari <ari.sulistiono@gmail.com>
           Installed-Size: ${INSTALLED_SIZE}
           Description: ArVisual Smart Color Enhancer for OBS Studio
-           One-click smart color pop video filter for OBS Studio.
+           Scene-adaptive smart color enhancement for OBS Studio.
           EOF
           dpkg-deb --build "$GITHUB_WORKSPACE/dist/linux-deb" "$RELEASE_DIR/arvisual-obs-v${VERSION}-linux-x86_64.deb"
 
@@ -251,12 +281,18 @@ jobs:
           path: |
             release/*linux-x86_64*.tar.gz
             release/*linux-x86_64*.deb
+          if-no-files-found: error
+          retention-days: 7
 
   publish-release:
     name: Publish GitHub Release
     needs: [windows-x64, macos-universal, linux-x86_64]
     runs-on: ubuntu-24.04
     if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
 
     steps:
       - name: Download all package artifacts
@@ -264,6 +300,22 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
+
+      - name: Generate SHA-256 checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          find . -maxdepth 1 -type f ! -name 'SHA256SUMS.txt' -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            | sed 's#  \./#  #' > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Generate build provenance attestations
+        uses: actions/attest@v4
+        with:
+          subject-path: 'release-assets/*'
 
       - name: Publish release page
         uses: softprops/action-gh-release@v2
@@ -273,15 +325,15 @@ jobs:
           generate_release_notes: true
           files: release-assets/*
           body: |
-            ## ArVisual OBS Plugin
+            ## ArVisual Smart Color Enhancer for OBS
 
-            One-click smart color pop filter for OBS Studio.
+            Scene-adaptive color enhancement with protected neutrals, skin-aware controls, controlled highlights, and a creator-friendly preset workflow.
 
             ### Recommended downloads
 
             **Windows**
             - `ArVisual-OBS-Setup-...windows-x64.exe` for normal users.
-            - `arvisual-obs-...windows-x64.zip` for manual copy into OBS folder.
+            - `arvisual-obs-...windows-x64.zip` for manual or portable OBS installation.
 
             **macOS**
             - `ArVisual-OBS-Installer-...macos-universal.pkg` for normal users.
@@ -290,3 +342,7 @@ jobs:
             **Linux**
             - `arvisual-obs-...linux-x86_64.deb` for Debian/Ubuntu-style installs.
             - `arvisual-obs-...linux-x86_64-manual.tar.gz` for manual copy.
+
+            ### Integrity
+
+            Every package is listed in `SHA256SUMS.txt` and receives a GitHub build-provenance attestation. Windows and macOS packages are currently distributed without commercial code-signing certificates, so install only assets published by this repository.

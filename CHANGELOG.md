@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Added deterministic repository consistency checks for version metadata, locale parity, installer contracts, and release workflow safety requirements.
+- Added the color-safety regression to pull-request and release preflight validation.
+- Hardened release publishing with strict missing-artifact failures, explicit Inno Setup exit handling, SHA-256 checksums, and GitHub build-provenance attestations.
+- Restored SHA-256 verification inside the graphical Windows installer and preserved a previously selected custom or portable OBS path during upgrades.
+- Added CODEOWNERS, a pull-request template, monthly GitHub Actions dependency updates, and a project code of conduct.
+
 ## v0.5.8 — 2026-07-18
 
 - Reworked the Windows installer as an OBS-aware plugin installer: existing OBS folders no longer trigger Inno Setup's generic directory warning.
