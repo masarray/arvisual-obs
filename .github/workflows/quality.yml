@@ -25,6 +25,23 @@ jobs:
           ref: release/v0.5.9-hardening
           fetch-depth: 0
 
+      - name: Repair social-preview migration helper
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          script = Path('scripts/apply-v059-hardening.py')
+          text = script.read_text(encoding='utf-8')
+          old = 'replace_once("docs/index.html", "assets/product-preview.svg", "assets/social-preview.png")'
+          new = '''landing = read("docs/index.html")
+          if landing.count("assets/product-preview.svg") != 2:
+              raise RuntimeError("Expected two landing-page social preview references")
+          write("docs/index.html", landing.replace("assets/product-preview.svg", "assets/social-preview.png"))'''
+          if text.count(old) != 1:
+              raise SystemExit('Could not locate the social-preview migration line')
+          script.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
       - name: Apply source and repository migration
         run: python3 scripts/apply-v059-hardening.py
 
