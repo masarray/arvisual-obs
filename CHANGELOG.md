@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Reworked the Windows installer as an OBS-aware plugin installer: existing OBS folders no longer trigger Inno Setup's generic directory warning.
+- Added automatic OBS discovery through registered application paths, uninstall metadata and common installation locations.
+- Added strict OBS root validation for standard and portable installations; the installer now warns only when OBS cannot be detected or the selected folder is invalid.
+- Added a professional README, responsive GitHub Pages landing page, SEO metadata, quick-start and troubleshooting documentation, contribution guidance and security reporting policy.
+
 ## v0.5.7
 
 - Fixed the real diffuse-white dimming root cause: the clarity pass no longer applies a `0.84` shoulder to unchanged source luminance. Flat white now bypasses clarity tone compression while the final scene-aware shoulder still protects highlights.
