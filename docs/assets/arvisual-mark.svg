@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">ArVisual</title>
+  <desc id="desc">A compact multicolor aperture mark for the ArVisual OBS plugin.</desc>
+  <defs>
+    <linearGradient id="g1" x1="18" y1="18" x2="108" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#61e7ff"/>
+      <stop offset="0.42" stop-color="#6f7cff"/>
+      <stop offset="0.72" stop-color="#bf5cff"/>
+      <stop offset="1" stop-color="#ff5f8f"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="104" y1="18" x2="30" y2="112" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff36e"/>
+      <stop offset="0.38" stop-color="#ff9d4d"/>
+      <stop offset="1" stop-color="#ff5474"/>
+    </linearGradient>
+  </defs>
+  <path d="M64 8c20.7 0 39.2 11.1 49.2 28.2L91.7 48.6A32 32 0 0 0 64 32V8Z" fill="url(#g1)"/>
+  <path d="M113.2 36.2A56 56 0 0 1 112 94H87.1A32 32 0 0 0 91.7 48.6l21.5-12.4Z" fill="url(#g2)"/>
+  <path d="M112 94a56 56 0 0 1-50 26V96a32 32 0 0 0 25.1-2H112Z" fill="url(#g1)"/>
+  <path d="M62 120A56 56 0 0 1 14.8 91.8l21.5-12.4A32 32 0 0 0 62 96v24Z" fill="url(#g2)"/>
+  <path d="M14.8 91.8A56 56 0 0 1 16 34h24.9a32 32 0 0 0-4.6 45.4L14.8 91.8Z" fill="url(#g1)"/>
+  <path d="M16 34A56 56 0 0 1 64 8v24a32 32 0 0 0-23.1 2H16Z" fill="url(#g2)"/>
+  <circle cx="64" cy="64" r="17" fill="#0d1324"/>
+  <circle cx="64" cy="64" r="8" fill="url(#g1)"/>
+</svg>
