@@ -300,6 +300,7 @@ def main() -> None:
     shader_text = (
         Path(__file__).resolve().parents[1] / "data" / "effects" / "arvisual.effect"
     ).read_text(encoding="utf-8")
+    assert "if (abs(arvisual_shader_abi_v3 - 3.0) > 0.001)" in shader_text
     assert "fit_gamut_preserve_luma(color, y + clarity_delta)" in shader_text
     assert "soft_luma_shoulder(y + clarity_delta, 0.84" not in shader_text
 

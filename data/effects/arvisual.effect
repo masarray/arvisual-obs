@@ -2,7 +2,7 @@
  ArVisual Smart Color Enhancer for OBS
  GPL-2.0-or-later
 
- v0.5.7 scene-intelligent professional engine:
+ v0.5.9 scene-intelligent professional engine:
  - every luma/chroma operation is mapped back into RGB gamut while preserving
    requested luminance; final saturate is only a numerical backstop
  - saturation uses remaining headroom instead of unbounded additive HSV math
@@ -147,6 +147,9 @@ float3 tap(float2 uv)
 float4 PSDraw(VertData vert_in) : TARGET
 {
     float4 px = image.Sample(textureSampler, vert_in.uv);
+    if (abs(arvisual_shader_abi_v3 - 3.0) > 0.001)
+        return px;
+
     float alpha = px.a;
     float3 src = saturate(px.rgb * ((alpha > 0.0) ? (1.0 / alpha) : 0.0));
     float3 src_hsv = rgb2hsv(src);

@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.5.9 — 2026-07-18
+
+- Replaced C-style allocation of the native filter state with normal C++ object lifetime and allocation-failure handling.
+- Added safe fallback behavior when Smart Auto GPU analysis resources are only partially available; the normal color grade remains active.
+- Added shader compiler diagnostics to the OBS log and a runtime ABI value guard that returns the unmodified source on mismatch.
+- Pinned the external OBS plugin template to an immutable reviewed commit for repeatable local and release builds.
+- Added a 1200×630 PNG social preview for reliable Open Graph and Twitter sharing.
+- Added CI contracts for runtime hardening, pinned dependencies, social metadata, version consistency, and color safety.
+- Code signing remains intentionally optional and is not required for this release.
+
 ## Unreleased
 
 - Added deterministic repository consistency checks for version metadata, locale parity, installer contracts, and release workflow safety requirements.

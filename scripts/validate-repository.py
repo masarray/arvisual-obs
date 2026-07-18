@@ -71,6 +71,16 @@ def main() -> None:
         read("docs/index.html"),
         "landing-page release fallback version",
     )
+    local_template_ref = capture(
+        r"\[string\]\s+\$TemplateRef\s*=\s*'([0-9a-f]{40})'",
+        read("scripts/build-local-windows.ps1"),
+        "local OBS template commit",
+    )
+    release_template_ref = capture(
+        r"TEMPLATE_REF:\s*([0-9a-f]{40})",
+        read(".github/workflows/release.yml"),
+        "release OBS template commit",
+    )
 
     version_locations = {
         "buildspec.json": version,
@@ -82,6 +92,7 @@ def main() -> None:
     }
     mismatches = {name: value for name, value in version_locations.items() if value != version}
     require(not mismatches, f"Version drift detected; expected {version}: {mismatches}")
+    require(local_template_ref == release_template_ref, "Local and release OBS template commits differ")
 
     require(manifest.get("name") == "ArVisual Smart Color Enhancer for OBS", "Unexpected web-manifest name")
     require(buildspec.get("website") == "https://masarray.github.io/arvisual-obs/", "Unexpected project website")
@@ -89,6 +100,22 @@ def main() -> None:
     english_keys = locale_keys("data/locale/en-US.ini")
     indonesian_keys = locale_keys("data/locale/id-ID.ini")
     require(english_keys == indonesian_keys, f"Locale key mismatch: en-only={english_keys - indonesian_keys}, id-only={indonesian_keys - english_keys}")
+
+    require((ROOT / "docs/assets/social-preview.png").is_file(), "Missing raster social preview")
+    landing_page = read("docs/index.html")
+    require(landing_page.count("assets/social-preview.png") >= 2, "Open Graph and Twitter cards must use the PNG preview")
+
+    source = read("src/arvisual-filter.cpp")
+    for marker in (
+        "new (std::nothrow) ArVisualFilter{}",
+        "smart_resources_ready",
+        "gs_effect_create_from_file(effect_path, &effect_errors)",
+    ):
+        require(marker in source, f"Native runtime hardening is missing {marker!r}")
+    require("bzalloc(sizeof(ArVisualFilter))" not in source, "ArVisualFilter must use normal C++ object lifetime")
+
+    shader = read("data/effects/arvisual.effect")
+    require("if (abs(arvisual_shader_abi_v3 - 3.0) > 0.001)" in shader, "Shader ABI value guard is missing")
 
     installer = read("packaging/windows/arvisual.iss")
     for marker in (

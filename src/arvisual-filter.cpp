@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <new>
 
 #define SETTING_PRESET "preset"
 #define SETTING_PRESET_APPLIED "preset_applied" /* hidden bookkeeping, not a UI property */
@@ -247,6 +248,7 @@ struct ArVisualFilter {
     gs_eparam_t *smart_clean_param = nullptr;
     gs_eparam_t *smart_separation_param = nullptr;
     bool effect_compatible = false;
+    bool smart_resources_ready = false;
 
     /* Smart engine graphics resources. */
     gs_texrender_t *input_tr = nullptr;
@@ -323,6 +325,8 @@ void update(void *data, obs_data_t *settings)
 void destroy(void *data)
 {
     auto *filter = static_cast<ArVisualFilter *>(data);
+    if (!filter)
+        return;
 
     obs_enter_graphics();
     if (filter->effect)
@@ -337,27 +341,30 @@ void destroy(void *data)
     }
     obs_leave_graphics();
 
-    bfree(filter);
+    delete filter;
 }
 
 void *create(obs_data_t *settings, obs_source_t *context)
 {
-    auto *filter = static_cast<ArVisualFilter *>(bzalloc(sizeof(ArVisualFilter)));
+    auto *filter = new (std::nothrow) ArVisualFilter{};
+    if (!filter) {
+        blog(LOG_ERROR, "[ArVisual] Failed to allocate filter state");
+        return nullptr;
+    }
+
     filter->context = context;
-    filter->smart_pop = 1.0f;
-    filter->smart_strength = 1.0f;
-    filter->smart_chroma_limit = 0.985f;
-    filter->stats = SceneStats();
 
     char *effect_path = obs_module_file("effects/arvisual.effect");
     if (!effect_path) {
         blog(LOG_ERROR, "[ArVisual] effects/arvisual.effect not found in module data path");
-        bfree(filter);
+        delete filter;
         return nullptr;
     }
 
+    char *effect_errors = nullptr;
+
     obs_enter_graphics();
-    filter->effect = gs_effect_create_from_file(effect_path, nullptr);
+    filter->effect = gs_effect_create_from_file(effect_path, &effect_errors);
     if (filter->effect) {
         filter->image_param = gs_effect_get_param_by_name(filter->effect, "image");
         filter->shader_abi_param = gs_effect_get_param_by_name(filter->effect, "arvisual_shader_abi_v3");
@@ -398,9 +405,21 @@ void *create(obs_data_t *settings, obs_source_t *context)
             filter->analysis_tr = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
             filter->stage[0] = gs_stagesurface_create(ANALYSIS_W, ANALYSIS_H, GS_RGBA);
             filter->stage[1] = gs_stagesurface_create(ANALYSIS_W, ANALYSIS_H, GS_RGBA);
+            filter->smart_resources_ready = filter->input_tr && filter->analysis_tr && filter->stage[0] && filter->stage[1];
         }
     }
     obs_leave_graphics();
+
+    if (effect_errors) {
+        blog(filter->effect ? LOG_WARNING : LOG_ERROR, "[ArVisual] Effect compiler: %s", effect_errors);
+        bfree(effect_errors);
+    }
+
+    if (filter->effect_compatible && !filter->smart_resources_ready) {
+        blog(LOG_WARNING,
+             "[ArVisual] Smart Auto analysis resources could not be created. "
+             "The normal color grade remains active without scene analysis.");
+    }
 
     bfree(effect_path);
 
@@ -424,6 +443,9 @@ void *create(obs_data_t *settings, obs_source_t *context)
  * statistics into the EMA state. Returns quietly if nothing is ready yet. */
 void read_scene_stats(ArVisualFilter *filter, float dt)
 {
+    if (!filter->smart_resources_ready)
+        return;
+
     const int read_idx = 1 - filter->stage_write;
     if (!filter->stage_valid[read_idx] || !filter->stage[read_idx])
         return;
@@ -660,7 +682,7 @@ void render(void *data, gs_effect_t *effect)
         dt = std::clamp(static_cast<float>(now - filter->last_ns) * 1e-9f, 0.001f, 0.25f);
     filter->last_ns = now;
 
-    if (filter->smart)
+    if (filter->smart && filter->smart_resources_ready)
         read_scene_stats(filter, dt);
 
     /* Pin the whole ArVisual pipeline to NON-LINEAR (gamma / sRGB-encoded)
@@ -678,19 +700,21 @@ void render(void *data, gs_effect_t *effect)
     /* Stage 1: capture the filter input into our own texture so the same
      * frame can feed both the analysis blit and the final grade. */
     bool captured = false;
-    gs_texrender_reset(filter->input_tr);
-    gs_blend_state_push();
-    gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
-    if (filter->input_tr && gs_texrender_begin(filter->input_tr, width, height)) {
-        vec4 clear_color;
-        vec4_zero(&clear_color);
-        gs_clear(GS_CLEAR_COLOR, &clear_color, 0.0f, 0);
-        gs_ortho(0.0f, static_cast<float>(width), 0.0f, static_cast<float>(height), -100.0f, 100.0f);
-        obs_source_process_filter_end(filter->context, obs_get_base_effect(OBS_EFFECT_DEFAULT), width, height);
-        gs_texrender_end(filter->input_tr);
-        captured = true;
+    if (filter->input_tr) {
+        gs_texrender_reset(filter->input_tr);
+        gs_blend_state_push();
+        gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
+        if (gs_texrender_begin(filter->input_tr, width, height)) {
+            vec4 clear_color;
+            vec4_zero(&clear_color);
+            gs_clear(GS_CLEAR_COLOR, &clear_color, 0.0f, 0);
+            gs_ortho(0.0f, static_cast<float>(width), 0.0f, static_cast<float>(height), -100.0f, 100.0f);
+            obs_source_process_filter_end(filter->context, obs_get_base_effect(OBS_EFFECT_DEFAULT), width, height);
+            gs_texrender_end(filter->input_tr);
+            captured = true;
+        }
+        gs_blend_state_pop();
     }
-    gs_blend_state_pop();
 
     if (!captured) {
         /* Texrender unavailable: fall back to the classic single-pass path so
@@ -710,7 +734,7 @@ void render(void *data, gs_effect_t *effect)
     gs_texture_t *input_tex = gs_texrender_get_texture(filter->input_tr);
 
     /* Stage 2: 64x36 analysis blit + async stage. Read happens next frame. */
-    if (filter->smart && input_tex && filter->analysis_tr) {
+    if (filter->smart && filter->smart_resources_ready && input_tex) {
         gs_texrender_reset(filter->analysis_tr);
         if (gs_texrender_begin(filter->analysis_tr, ANALYSIS_W, ANALYSIS_H)) {
             vec4 clear_color;

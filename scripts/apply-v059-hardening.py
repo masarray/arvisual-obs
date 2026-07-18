@@ -278,7 +278,10 @@ replace_once(
 )
 
 # Landing-page social sharing uses a raster card for reliable previews.
-replace_once("docs/index.html", "assets/product-preview.svg", "assets/social-preview.png")
+landing = read("docs/index.html")
+if landing.count("assets/product-preview.svg") != 2:
+    raise RuntimeError("Expected two landing-page social preview references")
+write("docs/index.html", landing.replace("assets/product-preview.svg", "assets/social-preview.png"))
 
 social_svg = """<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
   <title id="title">ArVisual Smart Color Enhancer for OBS</title>

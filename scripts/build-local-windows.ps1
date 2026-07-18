@@ -6,7 +6,7 @@ param(
     [ValidateSet('Auto', '2026', '2022')]
     [string] $VisualStudio = 'Auto',
 
-    [string] $TemplateRef = 'master',
+    [string] $TemplateRef = '3e7d7ac3b5342cd7d9b88890b9c70b472d1520fc',
 
     [switch] $NoPackage,
     [switch] $Ci
@@ -51,13 +51,14 @@ New-Item -ItemType Directory -Force -Path $BuildRoot | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $RepoRoot 'release') | Out-Null
 
 if (-not (Test-Path $TemplateDir)) {
-    Write-Host 'Cloning official OBS plugin template...'
-    Invoke-Logged git @('clone', '--depth', '1', '--branch', $TemplateRef, 'https://github.com/obsproject/obs-plugintemplate.git', $TemplateDir) $BuildRoot
-} elseif (-not $Ci) {
-    Write-Host 'Updating official OBS plugin template...'
-    Invoke-Logged git @('fetch', '--depth', '1', 'origin', $TemplateRef) $TemplateDir
-    Invoke-Logged git @('checkout', 'FETCH_HEAD') $TemplateDir
+    Write-Host 'Creating the OBS plugin template workspace...'
+    Invoke-Logged git @('clone', '--filter=blob:none', '--no-checkout', 'https://github.com/obsproject/obs-plugintemplate.git', $TemplateDir) $BuildRoot
 }
+
+Write-Host "Resolving pinned OBS plugin template commit $TemplateRef..."
+Invoke-Logged git @('fetch', '--depth', '1', 'origin', $TemplateRef) $TemplateDir
+Invoke-Logged git @('checkout', '--detach', '--force', 'FETCH_HEAD') $TemplateDir
+Invoke-Logged git @('clean', '-ffd') $TemplateDir
 
 Write-Host 'Overlaying ArVisual source into template workspace...'
 $OverlayItems = @('src', 'data', 'CMakeLists.txt', 'CMakePresets.json', 'buildspec.json')
