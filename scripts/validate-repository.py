@@ -61,11 +61,6 @@ def main() -> None:
         read("scripts/package-windows.ps1"),
         "Windows package fallback version",
     )
-    shader_version = capture(
-        r"\bv([0-9.]+)\s+scene-intelligent professional engine",
-        read("data/effects/arvisual.effect"),
-        "shader header version",
-    )
     docs_version = capture(
         r'"softwareVersion"\s*:\s*"([0-9.]+)"',
         read("docs/index.html"),
@@ -82,7 +77,6 @@ def main() -> None:
         "CMakeLists.txt": cmake_version,
         "packaging/windows/arvisual.iss": installer_version,
         "scripts/package-windows.ps1": package_version,
-        "data/effects/arvisual.effect": shader_version,
         "docs/index.html structured data": docs_version,
         "docs/index.html release fallback": docs_fallback_version,
     }
