@@ -1,6 +1,6 @@
 #define AppName "ArVisual Smart Color Enhancer for OBS"
 #ifndef AppVersion
-  #define AppVersion "0.5.7"
+  #define AppVersion "0.5.8"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\\..\\dist\\windows-manual"
@@ -68,13 +68,11 @@ function StripOuterQuotes(Value: String): String;
 begin
   Value := Trim(Value);
 
-  if (Length(Value) >= 2) and
-     (Value[1] = '"') and
-     (Value[Length(Value)] = '"') then
-  begin
-    Delete(Value, Length(Value), 1);
+  if (Length(Value) > 0) and (Value[1] = '"') then
     Delete(Value, 1, 1);
-  end;
+
+  if (Length(Value) > 0) and (Value[Length(Value)] = '"') then
+    Delete(Value, Length(Value), 1);
 
   Result := Trim(Value);
 end;

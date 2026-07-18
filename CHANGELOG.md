@@ -1,11 +1,13 @@
 # Changelog
 
-## Unreleased
+## v0.5.8 — 2026-07-18
 
 - Reworked the Windows installer as an OBS-aware plugin installer: existing OBS folders no longer trigger Inno Setup's generic directory warning.
-- Added automatic OBS discovery through registered application paths, uninstall metadata and common installation locations.
+- Added automatic OBS discovery through registered application paths, uninstall metadata, and common system-wide or per-user installation locations.
 - Added strict OBS root validation for standard and portable installations; the installer now warns only when OBS cannot be detected or the selected folder is invalid.
-- Added a professional README, responsive GitHub Pages landing page, SEO metadata, quick-start and troubleshooting documentation, contribution guidance and security reporting policy.
+- Added safer parsing for quoted OBS executable and display-icon registry paths.
+- Added a professional README, responsive GitHub Pages landing page, SEO metadata, quick-start and troubleshooting documentation, contribution guidance, security reporting policy, and structured issue forms.
+- Added repository-quality automation that validates public metadata and compiles the Windows installer script with Inno Setup before merge.
 
 ## v0.5.7
 
