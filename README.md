@@ -83,7 +83,7 @@ The release workflow also targets a macOS universal package and Debian/Ubuntu-st
 
 ## Engine design
 
-ArVisual v0.5.7 uses a native OBS render path with a small scene-analysis stage and a GPU effect stage. The engine includes active-picture statistics, bounded scene adaptation, luminance-preserving gamut mapping, per-family saturation limits, neutral protection, skin-specific constraints, anti-halo clarity and ABI validation between the plugin and shader.
+ArVisual v0.5.8 uses a native OBS render path with a small scene-analysis stage and a GPU effect stage. The engine includes active-picture statistics, bounded scene adaptation, luminance-preserving gamut mapping, per-family saturation limits, neutral protection, skin-specific constraints, anti-halo clarity and ABI validation between the plugin and shader.
 
 The project is currently built against OBS Studio `31.1.1` through `buildspec.json`.
 
