@@ -11,63 +11,6 @@ permissions:
   contents: read
 
 jobs:
-  apply-v059-hardening:
-    name: Apply v0.5.9 release migration
-    if: github.event_name == 'pull_request' && github.head_ref == 'release/v0.5.9-hardening'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout release branch
-        uses: actions/checkout@v4
-        with:
-          ref: release/v0.5.9-hardening
-          fetch-depth: 0
-
-      - name: Repair social-preview migration helper
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          script = Path('scripts/apply-v059-hardening.py')
-          text = script.read_text(encoding='utf-8')
-          old = 'replace_once("docs/index.html", "assets/product-preview.svg", "assets/social-preview.png")'
-          new = '''landing = read("docs/index.html")
-          if landing.count("assets/product-preview.svg") != 2:
-              raise RuntimeError("Expected two landing-page social preview references")
-          write("docs/index.html", landing.replace("assets/product-preview.svg", "assets/social-preview.png"))'''
-          if text.count(old) != 1:
-              raise SystemExit('Could not locate the social-preview migration line')
-          script.write_text(text.replace(old, new, 1), encoding='utf-8')
-          PY
-
-      - name: Apply source and repository migration
-        run: python3 scripts/apply-v059-hardening.py
-
-      - name: Render social preview PNG
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y librsvg2-bin
-          rsvg-convert docs/assets/social-preview.svg \
-            --width 1200 \
-            --height 630 \
-            --output docs/assets/social-preview.png
-          file docs/assets/social-preview.png
-
-      - name: Validate migrated repository
-        run: |
-          python3 scripts/validate-repository.py
-          python3 scripts/validate-color-safety.py
-
-      - name: Commit migrated files
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A -- . ':(exclude).github/workflows/**'
-          git commit -m 'Apply v0.5.9 hardening patch'
-          git push origin HEAD:release/v0.5.9-hardening
-
   repository-files:
     name: Validate repository contracts
     runs-on: ubuntu-24.04
@@ -116,6 +59,8 @@ jobs:
               "docs/sitemap.xml",
               "docs/assets/arvisual-mark.svg",
               "docs/assets/product-preview.svg",
+              "docs/assets/social-preview.svg",
+              "docs/assets/social-preview.png",
           ]
 
           missing = [path for path in required if not Path(path).is_file()]
@@ -128,6 +73,7 @@ jobs:
               'application/ld+json',
               'og:title',
               'twitter:card',
+              'assets/social-preview.png',
               'href="styles.css"',
               'src="app.js"',
           ]
