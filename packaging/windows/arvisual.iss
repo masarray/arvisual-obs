@@ -9,6 +9,15 @@
   #define OutputDir "..\\..\\release"
 #endif
 
+#define DllSource SourceDir + "\\obs-plugins\\64bit\\arvisual.dll"
+#define EffectSource SourceDir + "\\data\\obs-plugins\\arvisual\\effects\\arvisual.effect"
+#define EnLocaleSource SourceDir + "\\data\\obs-plugins\\arvisual\\locale\\en-US.ini"
+#define IdLocaleSource SourceDir + "\\data\\obs-plugins\\arvisual\\locale\\id-ID.ini"
+#define DllHash GetSHA256OfFile(DllSource)
+#define EffectHash GetSHA256OfFile(EffectSource)
+#define EnLocaleHash GetSHA256OfFile(EnLocaleSource)
+#define IdLocaleHash GetSHA256OfFile(IdLocaleSource)
+
 [Setup]
 AppId={{5B3E3D32-314A-4D1F-BBB7-9A9E8F0A0011}
 AppName={#AppName}
@@ -18,7 +27,7 @@ AppPublisherURL=https://github.com/masarray/arvisual-obs
 AppSupportURL=https://github.com/masarray/arvisual-obs/issues
 AppUpdatesURL=https://github.com/masarray/arvisual-obs/releases
 DefaultDirName={code:GetDefaultObsDir}
-UsePreviousAppDir=no
+UsePreviousAppDir=yes
 DirExistsWarning=no
 DisableProgramGroupPage=yes
 DisableReadyPage=no
@@ -37,7 +46,7 @@ UninstallDisplayName=ArVisual Smart Color Enhancer for OBS
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-Source: "{#SourceDir}\obs-plugins\64bit\arvisual.dll"; DestDir: "{app}\obs-plugins\64bit"; Flags: ignoreversion
+Source: "{#DllSource}"; DestDir: "{app}\obs-plugins\64bit"; Flags: ignoreversion
 Source: "{#SourceDir}\data\obs-plugins\arvisual\*"; DestDir: "{app}\data\obs-plugins\arvisual"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SourceDir}\README-INSTALL-WINDOWS.txt"; DestDir: "{app}\data\obs-plugins\arvisual"; Flags: ignoreversion skipifsourcedoesntexist
 
@@ -239,6 +248,44 @@ begin
     Result := ExpandConstant('{autopf}\obs-studio');
 end;
 
+function VerifyInstalledFile(const RelativePath, ExpectedHash: String): Boolean;
+var
+  InstalledPath: String;
+  ActualHash: String;
+begin
+  InstalledPath := AddBackslash(ExpandConstant('{app}')) + RelativePath;
+
+  if not FileExists(InstalledPath) then
+  begin
+    Log('ArVisual verification failed: missing ' + InstalledPath);
+    Result := False;
+    exit;
+  end;
+
+  ActualHash := GetSHA256OfFile(InstalledPath);
+  Result := CompareText(ActualHash, ExpectedHash) = 0;
+
+  if Result then
+    Log('ArVisual verified: ' + InstalledPath)
+  else
+    Log('ArVisual verification failed: hash mismatch for ' + InstalledPath);
+end;
+
+procedure VerifyInstalledPayload();
+begin
+  if not VerifyInstalledFile('obs-plugins\64bit\arvisual.dll', '{#DllHash}') then
+    RaiseException('The installed ArVisual DLL could not be verified.');
+
+  if not VerifyInstalledFile('data\obs-plugins\arvisual\effects\arvisual.effect', '{#EffectHash}') then
+    RaiseException('The installed ArVisual effect file could not be verified.');
+
+  if not VerifyInstalledFile('data\obs-plugins\arvisual\locale\en-US.ini', '{#EnLocaleHash}') then
+    RaiseException('The installed ArVisual English locale could not be verified.');
+
+  if not VerifyInstalledFile('data\obs-plugins\arvisual\locale\id-ID.ini', '{#IdLocaleHash}') then
+    RaiseException('The installed ArVisual Indonesian locale could not be verified.');
+end;
+
 function InitializeSetup(): Boolean;
 var
   ResultCode: Integer;
@@ -309,8 +356,9 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
   begin
+    VerifyInstalledPayload();
     MsgBox(
-      'ArVisual is installed in OBS Studio.' + #13#10 + #13#10 +
+      'ArVisual is installed and verified in OBS Studio.' + #13#10 + #13#10 +
       'Open OBS Studio, then add the filter from:' + #13#10 +
       'Source > Filters > + > ArVisual - Smart Color Enhancer',
       mbInformation,
