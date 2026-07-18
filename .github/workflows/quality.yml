@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   repository-files:
-    name: Validate metadata and static site
+    name: Validate repository contracts
     runs-on: ubuntu-24.04
 
     steps:
@@ -30,6 +30,12 @@ jobs:
                   json.load(handle)
               print(f"Validated {filename}")
 
+      - name: Validate release and repository consistency
+        run: python3 scripts/validate-repository.py
+
+      - name: Run deterministic color-safety regression
+        run: python3 scripts/validate-color-safety.py
+
       - name: Verify public documentation files
         shell: python
         run: |
@@ -40,6 +46,10 @@ jobs:
               "CHANGELOG.md",
               "CONTRIBUTING.md",
               "SECURITY.md",
+              "CODE_OF_CONDUCT.md",
+              ".github/CODEOWNERS",
+              ".github/pull_request_template.md",
+              ".github/dependabot.yml",
               "docs/index.html",
               "docs/styles.css",
               "docs/app.js",
@@ -89,6 +99,7 @@ jobs:
           Set-Content -Path "$sourceDir/obs-plugins/64bit/arvisual.dll" -Value 'CI placeholder'
           Set-Content -Path "$sourceDir/data/obs-plugins/arvisual/effects/arvisual.effect" -Value 'CI placeholder'
           Set-Content -Path "$sourceDir/data/obs-plugins/arvisual/locale/en-US.ini" -Value 'CI placeholder'
+          Set-Content -Path "$sourceDir/data/obs-plugins/arvisual/locale/id-ID.ini" -Value 'CI placeholder'
           Set-Content -Path "$sourceDir/README-INSTALL-WINDOWS.txt" -Value 'CI placeholder'
 
       - name: Install Inno Setup
