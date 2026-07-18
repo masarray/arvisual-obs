@@ -96,20 +96,39 @@ jobs:
         run: choco install innosetup --yes --no-progress
 
       - name: Compile installer
+        id: compile
+        continue-on-error: true
         shell: pwsh
         run: |
-          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          $command = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          if ($command) {
+            $iscc = $command.Source
+          } else {
+            $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          }
+
           if (-not (Test-Path $iscc)) {
-            throw "ISCC.exe was not found at $iscc"
+            throw "ISCC.exe was not found. Resolved path: $iscc"
           }
 
           $sourceDir = Join-Path $PWD 'dist/installer-smoke'
           $outputDir = Join-Path $PWD 'dist/installer-output'
+          $logPath = Join-Path $PWD 'dist/inno-compile.log'
           New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
-          & $iscc "/DAppVersion=0.0.0-ci" "/DSourceDir=$sourceDir" "/DOutputDir=$outputDir" "packaging/windows/arvisual.iss"
-          if ($LASTEXITCODE -ne 0) {
-            throw "Inno Setup compilation failed with exit code $LASTEXITCODE"
+          $arguments = @(
+            '/DAppVersion=0.0.0-ci',
+            "/DSourceDir=$sourceDir",
+            "/DOutputDir=$outputDir",
+            'packaging/windows/arvisual.iss'
+          )
+
+          $compilerOutput = & $iscc @arguments 2>&1
+          $exitCode = $LASTEXITCODE
+          $compilerOutput | Tee-Object -FilePath $logPath
+
+          if ($exitCode -ne 0) {
+            throw "Inno Setup compilation failed with exit code $exitCode"
           }
 
           $installer = Get-ChildItem -Path $outputDir -Filter '*.exe' | Select-Object -First 1
@@ -118,3 +137,24 @@ jobs:
           }
 
           Write-Host "Compiled $($installer.FullName)"
+
+      - name: Upload Inno compiler diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inno-compiler-diagnostics
+          path: |
+            dist/inno-compile.log
+            dist/installer-output/*.exe
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Enforce installer compilation result
+        if: steps.compile.outcome == 'failure'
+        shell: pwsh
+        run: |
+          if (Test-Path 'dist/inno-compile.log') {
+            Write-Host '--- Inno Setup compiler diagnostics ---'
+            Get-Content 'dist/inno-compile.log'
+          }
+          throw 'Windows installer script did not compile.'
