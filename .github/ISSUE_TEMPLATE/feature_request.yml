@@ -1,0 +1,66 @@
+name: Feature request
+description: Propose a focused improvement to ArVisual.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ArVisual prioritizes a compact, creator-friendly workflow. Explain the user problem before proposing controls or implementation details.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: What workflow is difficult or impossible today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the smallest useful change.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Smart color engine
+        - Presets and UX
+        - Installer and packaging
+        - Performance
+        - Platform compatibility
+        - Documentation
+        - Testing and tooling
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Mention existing OBS features, workarounds or simpler alternatives.
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: How should this be validated?
+      description: List representative scenes, performance targets or acceptance criteria.
+
+  - type: checkboxes
+    id: principles
+    attributes:
+      label: Product fit
+      options:
+        - label: The proposal keeps the main UI compact and understandable for non-colorists.
+          required: true
+        - label: The proposal does not depend on blanket saturation, brightness or skin smoothing.
+          required: true
+        - label: I searched existing issues and requests.
+          required: true

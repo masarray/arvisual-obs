@@ -1,0 +1,160 @@
+name: Repository Quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repository-files:
+    name: Validate metadata and static site
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate JSON metadata
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          for filename in ("buildspec.json", "docs/site.webmanifest"):
+              with Path(filename).open("r", encoding="utf-8") as handle:
+                  json.load(handle)
+              print(f"Validated {filename}")
+
+      - name: Verify public documentation files
+        shell: python
+        run: |
+          from pathlib import Path
+
+          required = [
+              "README.md",
+              "CHANGELOG.md",
+              "CONTRIBUTING.md",
+              "SECURITY.md",
+              "docs/index.html",
+              "docs/styles.css",
+              "docs/app.js",
+              "docs/QUICK_START.md",
+              "docs/TROUBLESHOOTING.md",
+              "docs/robots.txt",
+              "docs/sitemap.xml",
+              "docs/assets/arvisual-mark.svg",
+              "docs/assets/product-preview.svg",
+          ]
+
+          missing = [path for path in required if not Path(path).is_file()]
+          if missing:
+              raise SystemExit("Missing required files: " + ", ".join(missing))
+
+          html = Path("docs/index.html").read_text(encoding="utf-8")
+          required_markers = [
+              '<link rel="canonical"',
+              'application/ld+json',
+              'og:title',
+              'twitter:card',
+              'href="styles.css"',
+              'src="app.js"',
+          ]
+          absent = [marker for marker in required_markers if marker not in html]
+          if absent:
+              raise SystemExit("Landing page is missing: " + ", ".join(absent))
+
+          print("Static site structure validated")
+
+  installer-script:
+    name: Compile Windows installer script
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create smoke-test payload
+        shell: pwsh
+        run: |
+          $sourceDir = Join-Path $PWD 'dist/installer-smoke'
+          New-Item -ItemType Directory -Force -Path "$sourceDir/obs-plugins/64bit" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$sourceDir/data/obs-plugins/arvisual/effects" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$sourceDir/data/obs-plugins/arvisual/locale" | Out-Null
+
+          Set-Content -Path "$sourceDir/obs-plugins/64bit/arvisual.dll" -Value 'CI placeholder'
+          Set-Content -Path "$sourceDir/data/obs-plugins/arvisual/effects/arvisual.effect" -Value 'CI placeholder'
+          Set-Content -Path "$sourceDir/data/obs-plugins/arvisual/locale/en-US.ini" -Value 'CI placeholder'
+          Set-Content -Path "$sourceDir/README-INSTALL-WINDOWS.txt" -Value 'CI placeholder'
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+
+      - name: Compile installer
+        id: compile
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $command = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          if ($command) {
+            $iscc = $command.Source
+          } else {
+            $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          }
+
+          if (-not (Test-Path $iscc)) {
+            throw "ISCC.exe was not found. Resolved path: $iscc"
+          }
+
+          $sourceDir = Join-Path $PWD 'dist/installer-smoke'
+          $outputDir = Join-Path $PWD 'dist/installer-output'
+          $logPath = Join-Path $PWD 'dist/inno-compile.log'
+          New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
+
+          $arguments = @(
+            '/DAppVersion=0.0.0-ci',
+            "/DSourceDir=$sourceDir",
+            "/DOutputDir=$outputDir",
+            'packaging/windows/arvisual.iss'
+          )
+
+          $compilerOutput = & $iscc @arguments 2>&1
+          $exitCode = $LASTEXITCODE
+          $compilerOutput | Tee-Object -FilePath $logPath
+
+          if ($exitCode -ne 0) {
+            throw "Inno Setup compilation failed with exit code $exitCode"
+          }
+
+          $installer = Get-ChildItem -Path $outputDir -Filter '*.exe' | Select-Object -First 1
+          if (-not $installer) {
+            throw 'Installer smoke test did not produce an EXE.'
+          }
+
+          Write-Host "Compiled $($installer.FullName)"
+
+      - name: Upload Inno compiler diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inno-compiler-diagnostics
+          path: |
+            dist/inno-compile.log
+            dist/installer-output/*.exe
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Enforce installer compilation result
+        if: steps.compile.outcome == 'failure'
+        shell: pwsh
+        run: |
+          if (Test-Path 'dist/inno-compile.log') {
+            Write-Host '--- Inno Setup compiler diagnostics ---'
+            Get-Content 'dist/inno-compile.log'
+          }
+          throw 'Windows installer script did not compile.'

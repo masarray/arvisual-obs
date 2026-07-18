@@ -17,7 +17,9 @@ AppPublisher=Mas Ari
 AppPublisherURL=https://github.com/masarray/arvisual-obs
 AppSupportURL=https://github.com/masarray/arvisual-obs/issues
 AppUpdatesURL=https://github.com/masarray/arvisual-obs/releases
-DefaultDirName={autopf}\obs-studio
+DefaultDirName={code:GetDefaultObsDir}
+UsePreviousAppDir=no
+DirExistsWarning=no
 DisableProgramGroupPage=yes
 DisableReadyPage=no
 DisableFinishedPage=no
@@ -47,15 +49,216 @@ Type: files; Name: "{app}\obs-plugins\64bit\arvisual.dll"
 Type: filesandordirs; Name: "{app}\data\obs-plugins\arvisual"
 
 [Code]
+var
+  ObsAutoDetected: Boolean;
+  ObsDetectionWarningShown: Boolean;
+
+function IsObsRoot(const Candidate: String): Boolean;
+var
+  Root: String;
+begin
+  Root := AddBackslash(Candidate);
+  Result :=
+    FileExists(Root + 'bin\64bit\obs64.exe') and
+    DirExists(Root + 'obs-plugins\64bit') and
+    DirExists(Root + 'data\obs-plugins');
+end;
+
+function StripOuterQuotes(Value: String): String;
+begin
+  Value := Trim(Value);
+
+  if (Length(Value) >= 2) and
+     (Value[1] = '"') and
+     (Value[Length(Value)] = '"') then
+  begin
+    Delete(Value, Length(Value), 1);
+    Delete(Value, 1, 1);
+  end;
+
+  Result := Trim(Value);
+end;
+
+function ExtractExecutablePath(Value: String): String;
+var
+  ExeEnd: Integer;
+begin
+  Value := Trim(Value);
+  ExeEnd := Pos('.exe', Lowercase(Value));
+
+  if ExeEnd > 0 then
+    Value := Copy(Value, 1, ExeEnd + 3);
+
+  Result := StripOuterQuotes(Value);
+end;
+
+function TryObsExecutable(const ExecutablePath: String; var ObsDir: String): Boolean;
+var
+  Candidate: String;
+begin
+  Result := False;
+
+  if not FileExists(ExecutablePath) then
+    exit;
+
+  Candidate := ExtractFileDir(ExtractFileDir(ExtractFileDir(ExecutablePath)));
+  if IsObsRoot(Candidate) then
+  begin
+    ObsDir := Candidate;
+    Result := True;
+  end;
+end;
+
+function TryObsDirectory(const Candidate: String; var ObsDir: String): Boolean;
+begin
+  Result := IsObsRoot(Candidate);
+  if Result then
+    ObsDir := Candidate;
+end;
+
+function FindObsFromAppPaths(RootKey: Integer; var ObsDir: String): Boolean;
+var
+  Value: String;
+begin
+  Result := False;
+
+  if RegQueryStringValue(
+       RootKey,
+       'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\obs64.exe',
+       '',
+       Value) then
+  begin
+    Value := ExtractExecutablePath(Value);
+    Result := TryObsExecutable(Value, ObsDir);
+  end;
+end;
+
+function FindObsFromUninstall(RootKey: Integer; var ObsDir: String): Boolean;
+var
+  UninstallRoot: String;
+  SubKeys: TArrayOfString;
+  I: Integer;
+  KeyPath: String;
+  DisplayName: String;
+  InstallLocation: String;
+  DisplayIcon: String;
+begin
+  Result := False;
+  UninstallRoot := 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall';
+
+  if not RegGetSubkeyNames(RootKey, UninstallRoot, SubKeys) then
+    exit;
+
+  if GetArrayLength(SubKeys) = 0 then
+    exit;
+
+  for I := 0 to GetArrayLength(SubKeys) - 1 do
+  begin
+    KeyPath := UninstallRoot + '\' + SubKeys[I];
+    DisplayName := '';
+
+    if RegQueryStringValue(RootKey, KeyPath, 'DisplayName', DisplayName) and
+       (Pos('obs studio', Lowercase(Trim(DisplayName))) = 1) then
+    begin
+      InstallLocation := '';
+      if RegQueryStringValue(RootKey, KeyPath, 'InstallLocation', InstallLocation) then
+      begin
+        InstallLocation := StripOuterQuotes(InstallLocation);
+        if TryObsDirectory(InstallLocation, ObsDir) then
+        begin
+          Result := True;
+          exit;
+        end;
+      end;
+
+      DisplayIcon := '';
+      if RegQueryStringValue(RootKey, KeyPath, 'DisplayIcon', DisplayIcon) then
+      begin
+        DisplayIcon := ExtractExecutablePath(DisplayIcon);
+        if TryObsExecutable(DisplayIcon, ObsDir) then
+        begin
+          Result := True;
+          exit;
+        end;
+      end;
+    end;
+  end;
+end;
+
+function FindObsInRegistry(var ObsDir: String): Boolean;
+begin
+  Result :=
+    FindObsFromAppPaths(HKLM64, ObsDir) or
+    FindObsFromAppPaths(HKCU64, ObsDir) or
+    FindObsFromUninstall(HKLM64, ObsDir) or
+    FindObsFromUninstall(HKCU64, ObsDir) or
+    FindObsFromAppPaths(HKLM32, ObsDir) or
+    FindObsFromAppPaths(HKCU32, ObsDir) or
+    FindObsFromUninstall(HKLM32, ObsDir) or
+    FindObsFromUninstall(HKCU32, ObsDir);
+end;
+
+function FindObsInstallDir(var ObsDir: String): Boolean;
+var
+  Candidate: String;
+begin
+  Result := False;
+  ObsDir := '';
+
+  if FindObsInRegistry(ObsDir) then
+  begin
+    Result := True;
+    exit;
+  end;
+
+  Candidate := ExpandConstant('{autopf}\obs-studio');
+  if TryObsDirectory(Candidate, ObsDir) then
+  begin
+    Result := True;
+    exit;
+  end;
+
+  Candidate := ExpandConstant('{localappdata}\Programs\obs-studio');
+  if TryObsDirectory(Candidate, ObsDir) then
+  begin
+    Result := True;
+    exit;
+  end;
+
+  Candidate := ExpandConstant('{pf32}\obs-studio');
+  Result := TryObsDirectory(Candidate, ObsDir);
+end;
+
+function GetDefaultObsDir(Param: String): String;
+var
+  DetectedDir: String;
+begin
+  ObsAutoDetected := FindObsInstallDir(DetectedDir);
+
+  if ObsAutoDetected then
+    Result := DetectedDir
+  else
+    Result := ExpandConstant('{autopf}\obs-studio');
+end;
+
 function InitializeSetup(): Boolean;
 var
   ResultCode: Integer;
 begin
-  if Exec(ExpandConstant('{cmd}'), '/C tasklist /FI "IMAGENAME eq obs64.exe" | find /I "obs64.exe"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  if Exec(
+       ExpandConstant('{cmd}'),
+       '/C tasklist /FI "IMAGENAME eq obs64.exe" | find /I "obs64.exe"',
+       '',
+       SW_HIDE,
+       ewWaitUntilTerminated,
+       ResultCode) then
   begin
     if ResultCode = 0 then
     begin
-      MsgBox('OBS Studio is currently running. Please close OBS Studio before installing ArVisual, then run this installer again.', mbError, MB_OK);
+      MsgBox(
+        'OBS Studio is currently running. Close OBS Studio before installing ArVisual, then run this installer again.',
+        mbError,
+        MB_OK);
       Result := False;
       exit;
     end;
@@ -64,10 +267,55 @@ begin
   Result := True;
 end;
 
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if (CurPageID = wpSelectDir) and
+     (not ObsAutoDetected) and
+     (not ObsDetectionWarningShown) then
+  begin
+    ObsDetectionWarningShown := True;
+    MsgBox(
+      'OBS Studio was not detected automatically.' + #13#10 + #13#10 +
+      'Install OBS Studio first, or select the root folder of an existing or portable OBS installation. The selected folder must contain:' + #13#10 +
+      'bin\64bit\obs64.exe',
+      mbInformation,
+      MB_OK);
+  end;
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+
+  if (CurPageID = wpSelectDir) and (not IsObsRoot(WizardDirValue)) then
+  begin
+    MsgBox(
+      'The selected folder is not a valid 64-bit OBS Studio installation.' + #13#10 + #13#10 +
+      'Select the OBS Studio root folder that contains:' + #13#10 +
+      'bin\64bit\obs64.exe',
+      mbError,
+      MB_OK);
+    Result := False;
+  end;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  if not IsObsRoot(ExpandConstant('{app}')) then
+    Result := 'ArVisual cannot be installed because the selected folder is not a valid 64-bit OBS Studio installation.'
+  else
+    Result := '';
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
   begin
-    MsgBox('ArVisual files are installed. Restart OBS Studio, then add the filter from Source > Filters > + > ArVisual - Smart Color Enhancer.', mbInformation, MB_OK);
+    MsgBox(
+      'ArVisual is installed in OBS Studio.' + #13#10 + #13#10 +
+      'Open OBS Studio, then add the filter from:' + #13#10 +
+      'Source > Filters > + > ArVisual - Smart Color Enhancer',
+      mbInformation,
+      MB_OK);
   end;
 end;
