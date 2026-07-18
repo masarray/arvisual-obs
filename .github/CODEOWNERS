@@ -1,0 +1,9 @@
+# Default maintainer review for all repository changes.
+* @masarray
+
+# Release and installer paths require explicit maintainer review.
+/.github/workflows/ @masarray
+/packaging/ @masarray
+/scripts/ @masarray
+/src/ @masarray
+/data/effects/ @masarray
