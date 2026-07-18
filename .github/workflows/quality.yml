@@ -59,6 +59,8 @@ jobs:
               "docs/sitemap.xml",
               "docs/assets/arvisual-mark.svg",
               "docs/assets/product-preview.svg",
+              "docs/assets/social-preview.svg",
+              "docs/assets/social-preview.png",
           ]
 
           missing = [path for path in required if not Path(path).is_file()]
@@ -71,6 +73,7 @@ jobs:
               'application/ld+json',
               'og:title',
               'twitter:card',
+              'assets/social-preview.png',
               'href="styles.css"',
               'src="app.js"',
           ]

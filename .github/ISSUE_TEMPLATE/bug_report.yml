@@ -14,7 +14,7 @@ body:
     attributes:
       label: ArVisual version
       description: Use the version shown in the release package or plugin log.
-      placeholder: v0.5.8
+      placeholder: v0.5.9
     validations:
       required: true
 

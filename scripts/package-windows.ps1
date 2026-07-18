@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string] $StageRoot,
 
-    [string] $Version = "0.5.8",
+    [string] $Version = "0.5.9",
     [string] $Configuration = "RelWithDebInfo"
 )
 

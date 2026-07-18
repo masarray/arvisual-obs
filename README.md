@@ -83,7 +83,7 @@ The release workflow also targets a macOS universal package and Debian/Ubuntu-st
 
 ## Engine design
 
-ArVisual v0.5.8 uses a native OBS render path with a small scene-analysis stage and a GPU effect stage. The engine includes active-picture statistics, bounded scene adaptation, luminance-preserving gamut mapping, per-family saturation limits, neutral protection, skin-specific constraints, anti-halo clarity and ABI validation between the plugin and shader.
+ArVisual v0.5.9 uses a native OBS render path with a small scene-analysis stage and a GPU effect stage. The engine includes active-picture statistics, bounded scene adaptation, luminance-preserving gamut mapping, per-family saturation limits, neutral protection, skin-specific constraints, anti-halo clarity and ABI validation between the plugin and shader.
 
 The project is currently built against OBS Studio `31.1.1` through `buildspec.json`.
 
@@ -117,8 +117,8 @@ build-local-windows-vs2026.bat
 Creating a semantic version tag starts the cross-platform release workflow:
 
 ```powershell
-git tag v0.5.8
-git push origin v0.5.8
+git tag v0.5.9
+git push origin v0.5.9
 ```
 
 The workflow builds the Windows installer and ZIP, macOS package and manual ZIP, Linux DEB and manual archive, then publishes them as separate GitHub Release assets.
