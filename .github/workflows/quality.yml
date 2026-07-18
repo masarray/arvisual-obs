@@ -80,6 +80,28 @@ jobs:
 
           print("Static site structure validated")
 
+  native-linux-build:
+    name: Build native plugin on Linux
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build pkg-config libobs-dev
+
+      - name: Configure native plugin
+        run: |
+          cmake -S . -B .build/native-quality -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
+
+      - name: Build native plugin
+        run: cmake --build .build/native-quality --parallel
+
   installer-script:
     name: Compile Windows installer script
     runs-on: windows-2022
