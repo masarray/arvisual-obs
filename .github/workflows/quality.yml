@@ -64,7 +64,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
+          git add -A -- . ':(exclude).github/workflows/**'
           git commit -m 'Apply v0.5.9 hardening patch'
           git push origin HEAD:release/v0.5.9-hardening
 
