@@ -116,7 +116,7 @@ begin
     ObsDir := Candidate;
 end;
 
-function FindObsFromAppPaths(RootKey: HKEY; var ObsDir: String): Boolean;
+function FindObsFromAppPaths(RootKey: Integer; var ObsDir: String): Boolean;
 var
   Value: String;
 begin
@@ -133,7 +133,7 @@ begin
   end;
 end;
 
-function FindObsFromUninstall(RootKey: HKEY; var ObsDir: String): Boolean;
+function FindObsFromUninstall(RootKey: Integer; var ObsDir: String): Boolean;
 var
   UninstallRoot: String;
   SubKeys: TArrayOfString;
