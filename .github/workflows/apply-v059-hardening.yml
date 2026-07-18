@@ -1,0 +1,46 @@
+name: Apply v0.5.9 Hardening
+
+on:
+  push:
+    branches:
+      - release/v0.5.9-hardening
+
+permissions:
+  contents: write
+
+jobs:
+  apply-hardening:
+    if: github.event.head_commit.message != 'Apply v0.5.9 hardening patch'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply source and repository migration
+        run: python3 scripts/apply-v059-hardening.py
+
+      - name: Render social preview PNG
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y librsvg2-bin
+          rsvg-convert docs/assets/social-preview.svg \
+            --width 1200 \
+            --height 630 \
+            --output docs/assets/social-preview.png
+          file docs/assets/social-preview.png
+
+      - name: Validate migrated repository
+        run: |
+          python3 scripts/validate-repository.py
+          python3 scripts/validate-color-safety.py
+
+      - name: Commit migrated files
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Apply v0.5.9 hardening patch'
+          git push origin HEAD:release/v0.5.9-hardening
