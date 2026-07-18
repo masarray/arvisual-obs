@@ -1,0 +1,128 @@
+name: Bug report
+description: Report an installation, rendering, compatibility or performance problem.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve ArVisual. Search existing issues first and remove private information from logs or screenshots.
+
+  - type: input
+    id: arvisual-version
+    attributes:
+      label: ArVisual version
+      description: Use the version shown in the release package or plugin log.
+      placeholder: v0.5.7
+    validations:
+      required: true
+
+  - type: input
+    id: obs-version
+    attributes:
+      label: OBS Studio version
+      placeholder: 31.1.1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: operating-system
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11 x64
+        - Windows 10 x64
+        - macOS Apple Silicon
+        - macOS Intel
+        - Linux x86_64
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU
+      placeholder: NVIDIA RTX 3060 / Intel Iris Xe / AMD Radeon
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Installation method
+      options:
+        - Windows installer EXE
+        - Windows manual ZIP
+        - macOS PKG
+        - macOS manual plugin copy
+        - Linux DEB
+        - Linux manual archive
+        - Built from source
+    validations:
+      required: true
+
+  - type: dropdown
+    id: problem-area
+    attributes:
+      label: Problem area
+      options:
+        - Installer or upgrade
+        - Filter does not appear
+        - Black output or rendering failure
+        - Incorrect color or visual artifact
+        - Performance regression
+        - Crash
+        - Build or packaging
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the actual behavior and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Install ...
+        2. Add ArVisual to ...
+        3. Select preset ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant OBS log lines
+      description: Paste only the relevant section around arvisual, arvisual.dll, Failed to load or the crash.
+      render: text
+
+  - type: textarea
+    id: media
+    attributes:
+      label: Screenshot or sample
+      description: Drag in a screenshot or short visual sample when it helps explain the problem.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I closed OBS before installing or upgrading.
+          required: true
+        - label: I tested with the complete DLL, effect and locale files from one release.
+          required: true
+        - label: I searched existing issues.
+          required: true
+        - label: This report does not contain credentials or private recordings.
+          required: true
