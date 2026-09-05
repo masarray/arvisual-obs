@@ -9,7 +9,7 @@ jobs:
     runs-on: windows-2022
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Build and package
         shell: pwsh
         run: ./scripts/build-local-windows.ps1 -Configuration RelWithDebInfo -VisualStudio 2022 -Ci
