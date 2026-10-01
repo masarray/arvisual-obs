@@ -92,7 +92,7 @@ jobs:
           Write-Host "Built $($installer.FullName)"
 
       - name: Upload Windows package artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: arvisual-windows-x64
           path: |
@@ -188,7 +188,7 @@ jobs:
             "$RELEASE_DIR/ArVisual-OBS-Installer-v${VERSION}-macos-universal.pkg"
 
       - name: Upload macOS package artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: arvisual-macos-universal
           path: |
@@ -290,7 +290,7 @@ jobs:
           dpkg-deb --build "$DEB_ROOT" "$RELEASE_DIR/arvisual-obs-v${VERSION}-linux-x86_64.deb"
 
       - name: Upload Linux package artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: arvisual-linux-x86_64
           path: |

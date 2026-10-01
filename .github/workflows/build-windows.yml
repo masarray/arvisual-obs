@@ -14,7 +14,7 @@ jobs:
         shell: pwsh
         run: ./scripts/build-local-windows.ps1 -Configuration RelWithDebInfo -VisualStudio 2022 -Ci
       - name: Upload Windows ZIP artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: arvisual-obs-windows-x64-manual
           path: release/*.zip
